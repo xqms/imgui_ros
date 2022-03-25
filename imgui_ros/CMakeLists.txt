@@ -15,6 +15,12 @@ catkin_package(
 
 set(CMAKE_CXX_STANDARD 17)
 
+execute_process(
+    COMMAND cmake -E make_directory "${CATKIN_DEVEL_PREFIX}/include/imgui_ros"
+    COMMAND cmake -E create_symlink "${CMAKE_CURRENT_SOURCE_DIR}/contrib/imgui" "${CATKIN_DEVEL_PREFIX}/include/imgui_ros/imgui"
+    COMMAND cmake -E create_symlink "${CMAKE_CURRENT_SOURCE_DIR}/contrib/implot" "${CATKIN_DEVEL_PREFIX}/include/imgui_ros/implot"
+)
+
 add_library(imgui_ros
     # ImGui
     contrib/imgui/imgui.cpp
