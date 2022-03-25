@@ -1,33 +1,28 @@
 
 cmake_minimum_required(VERSION 3.10)
-project(rqt_imgui)
-
-find_package(Qt5 COMPONENTS Widgets REQUIRED)
-
-find_package(PkgConfig)
-pkg_check_modules(FontConfig fontconfig REQUIRED IMPORTED_TARGET)
+project(imgui_ros)
 
 find_package(catkin REQUIRED COMPONENTS
     roscpp
-    rqt_gui_cpp
     topic_tools
 )
 
 catkin_package(
-    CATKIN_DEPENDS rqt_gui_cpp
-    CFG_EXTRAS rqt_imgui.cmake
-    LIBRARIES rqt_imgui
+    CATKIN_DEPENDS topic_tools
+    CFG_EXTRAS imgui_ros.cmake
+    LIBRARIES imgui_ros
 )
 
 set(CMAKE_CXX_STANDARD 17)
 
-add_library(rqt_imgui_common
+add_library(imgui_ros
     # ImGui
     contrib/imgui/imgui.cpp
     contrib/imgui/imgui_demo.cpp
     contrib/imgui/imgui_draw.cpp
     contrib/imgui/imgui_tables.cpp
     contrib/imgui/imgui_widgets.cpp
+    contrib/imgui/backends/imgui_impl_opengl3.cpp
 
     # ImPlot
     contrib/implot/implot.cpp
@@ -35,42 +30,27 @@ add_library(rqt_imgui_common
 
     src/scrolling_buffer.cpp
 )
-target_include_directories(rqt_imgui_common PRIVATE
+target_include_directories(imgui_ros PRIVATE
     include
 )
-target_include_directories(rqt_imgui_common PUBLIC
+target_include_directories(imgui_ros PUBLIC
     contrib/imgui
     contrib/implot
 )
-
-add_library(rqt_imgui
-    # ImGui
-    contrib/imgui/backends/imgui_impl_opengl3.cpp
-
-    src/rqt_plugin.cpp
+target_link_libraries(imgui_ros PRIVATE
+    dl
 )
-target_include_directories(rqt_imgui PRIVATE
-    ${catkin_INCLUDE_DIRS}
-    include
-)
-target_link_libraries(rqt_imgui
-    rqt_imgui_common
-    ${catkin_LIBRARIES}
-    Qt5::Widgets
-    PkgConfig::FontConfig
-)
-target_link_options(rqt_imgui PRIVATE
+target_link_options(imgui_ros PRIVATE
     "-Wl,--no-undefined"
 )
 
-install(TARGETS rqt_imgui rqt_imgui_common
+install(TARGETS imgui_ros
     LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
 )
 
 install(FILES
-    include/rqt_imgui/rqt_plugin.h
-    include/rqt_imgui/window.h
-    include/rqt_imgui/scrolling_buffer.h
+    include/imgui_ros/window.h
+    include/imgui_ros/scrolling_buffer.h
     DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}/
 )
 
@@ -78,6 +58,11 @@ install(FILES
     contrib/imgui/imgui.h
     contrib/imgui/imconfig.h
     DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}/imgui/
+)
+
+install(FILES
+    contrib/imgui/backends/imgui_impl_opengl3.h
+    DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}/imgui/backends/
 )
 
 install(FILES

@@ -1,11 +1,10 @@
 <package format="3">
-    <name>rqt_imgui</name>
+    <name>imgui_ros</name>
     <version>0.0.1</version>
-    <description>imgui integration for ROS and RQT</description>
+    <description>imgui integration for ROS</description>
     <license>MIT</license>
     <maintainer email="max.schwarz@ais.uni-bonn.de">Max Schwarz</maintainer>
 
     <buildtool_depend>catkin</buildtool_depend>
-    <depend>rqt_gui</depend>
-    <depend>rqt_gui_cpp</depend>
+    <depend>topic_tools</depend>
 </package>

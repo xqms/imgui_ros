@@ -7,12 +7,14 @@
 #include <QTimer>
 #include <QCoreApplication>
 
-#include <imgui.h>
-#include <implot.h>
+#include <imgui_ros/imgui/imgui.h>
+#include <imgui_ros/imgui/implot.h>
 
 #include <fontconfig/fontconfig.h>
 
-#include "../contrib/imgui/backends/imgui_impl_opengl3.h"
+#include <imgui_ros/imgui/backends/imgui_impl_opengl3.h>
+
+using namespace imgui_ros;
 
 namespace
 {
@@ -57,7 +59,7 @@ namespace
 namespace rqt_imgui
 {
 
-class Widget::RQTSubscriber : public rqt_imgui::Subscriber::Impl
+class Widget::RQTSubscriber : public ros_imgui::Subscriber::Impl
 {
 public:
     RQTSubscriber(ros::Subscriber&& sub, rqt_imgui::Widget* w)
@@ -67,7 +69,7 @@ public:
         w->registerSubscriber(this);
     }
 
-    ~RQTSubscriber()
+    virtual ~RQTSubscriber()
     {
         m_w->deregisterSubscriber(this);
     }

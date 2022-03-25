@@ -1,8 +1,8 @@
-// rqt imgui integration
+// imgui ROS integration
 // Author: Max Schwarz <max.schwarz@ais.uni-bonn.de>
 
-#ifndef RQT_IMGUI_WINDOW_H
-#define RQT_IMGUI_WINDOW_H
+#ifndef IMGUI_ROS_WINDOW_H
+#define IMGUI_ROS_WINDOW_H
 
 #include <string>
 
@@ -10,7 +10,7 @@
 #include <ros/transport_hints.h>
 #include <topic_tools/shape_shifter.h>
 
-namespace rqt_imgui
+namespace imgui_ros
 {
 
 class Subscriber

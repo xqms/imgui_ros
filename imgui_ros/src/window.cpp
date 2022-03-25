@@ -1,9 +1,9 @@
-// rqt imgui integration
+// imgui ROS integration
 // Author: Max Schwarz <max.schwarz@ais.uni-bonn.de>
 
-#include <rqt_imgui/window.h>
+#include <imgui_ros/window.h>
 
-namespace rqt_imgui
+namespace imgui_ros
 {
 
 Context::Context()

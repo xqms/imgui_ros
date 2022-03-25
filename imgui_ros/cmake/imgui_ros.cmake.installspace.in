@@ -1,12 +1,6 @@
 
-find_package(Qt5 COMPONENTS Widgets REQUIRED)
-
-set(rqt_imgui_INCLUDE_DIRS
+set(ros_imgui_INCLUDE_DIRS
     "@CMAKE_INSTALL_PREFIX@/include"
     "@CMAKE_INSTALL_PREFIX@/@CATKIN_PACKAGE_INCLUDE_DESTINATION@/imgui"
     "@CMAKE_INSTALL_PREFIX@/@CATKIN_PACKAGE_INCLUDE_DESTINATION@/implot"
-)
-
-list(APPEND rqt_imgui_LIBRARIES
-    Qt5::Widgets
 )

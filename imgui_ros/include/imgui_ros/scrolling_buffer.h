@@ -1,14 +1,14 @@
 // Circular buffer for plotting
 // Author: Max Schwarz <max.schwarz@ais.uni-bonn.de>
 
-#ifndef RQT_IMGUI_SCROLLING_BUFFER_H
-#define RQT_IMGUI_SCROLLING_BUFFER_H
+#ifndef IMGUI_ROS_SCROLLING_BUFFER_H
+#define IMGUI_ROS_SCROLLING_BUFFER_H
 
 #include <vector>
 #include <array>
 #include <algorithm>
 
-namespace rqt_imgui
+namespace imgui_ros
 {
 
 template<int BUFFER_SIZE>

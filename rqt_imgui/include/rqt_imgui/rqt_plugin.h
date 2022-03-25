@@ -9,7 +9,7 @@
 #include <QOpenGLWidget>
 #include <QOpenGLFunctions_3_2_Core>
 
-#include "window.h"
+#include <imgui_ros/window.h>
 
 struct ImGuiContext;
 struct ImGuiIO;
@@ -18,12 +18,12 @@ struct ImPlotContext;
 namespace rqt_imgui
 {
 
-class Widget : public QOpenGLWidget, protected QOpenGLFunctions_3_2_Core, public Context
+class Widget : public QOpenGLWidget, protected QOpenGLFunctions_3_2_Core, public imgui_ros::Context
 {
 public:
     class RQTSubscriber;
 
-    explicit Widget(Window* window, const ros::NodeHandle& nh, QWidget* parent = nullptr);
+    explicit Widget(imgui_ros::Window* window, const ros::NodeHandle& nh, QWidget* parent = nullptr);
     ~Widget();
 
     void shutdown();
@@ -47,12 +47,12 @@ private:
     ros::NodeHandle& nodeHandle() override
     { return m_nh; }
 
-    Subscriber subscribeRaw(const std::string& topic, int queue, const RawCb& rawCb, const ros::TransportHints& hints = {}) override;
+    imgui_ros::Subscriber subscribeRaw(const std::string& topic, int queue, const RawCb& rawCb, const ros::TransportHints& hints = {}) override;
 
     bool event(QEvent * event) override;
 
 
-    Window* m_window = nullptr;
+    imgui_ros::Window* m_window = nullptr;
 
     ros::NodeHandle m_nh;
 
