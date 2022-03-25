@@ -1,5 +1,5 @@
 
-set(ros_imgui_INCLUDE_DIRS
+set(imgui_ros_INCLUDE_DIRS
     "@CMAKE_CURRENT_SOURCE_DIR@/include"
     "@CMAKE_CURRENT_SOURCE_DIR@/contrib/imgui"
     "@CMAKE_CURRENT_SOURCE_DIR@/contrib/implot"

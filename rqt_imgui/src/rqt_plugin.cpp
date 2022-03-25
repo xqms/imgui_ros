@@ -8,7 +8,7 @@
 #include <QCoreApplication>
 
 #include <imgui_ros/imgui/imgui.h>
-#include <imgui_ros/imgui/implot.h>
+#include <imgui_ros/implot/implot.h>
 
 #include <fontconfig/fontconfig.h>
 
@@ -59,7 +59,7 @@ namespace
 namespace rqt_imgui
 {
 
-class Widget::RQTSubscriber : public ros_imgui::Subscriber::Impl
+class Widget::RQTSubscriber : public imgui_ros::Subscriber::Impl
 {
 public:
     RQTSubscriber(ros::Subscriber&& sub, rqt_imgui::Widget* w)

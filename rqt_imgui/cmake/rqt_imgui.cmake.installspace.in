@@ -1,10 +1,10 @@
 
 find_package(Qt5 COMPONENTS Widgets REQUIRED)
-find_package(ros_imgui)
+find_package(imgui_ros)
 
 set(rqt_imgui_INCLUDE_DIRS
     "@CMAKE_INSTALL_PREFIX@/include"
-    ${ros_imgui_INCLUDE_DIRS}
+    ${imgui_ros_INCLUDE_DIRS}
 )
 
 list(APPEND rqt_imgui_LIBRARIES
