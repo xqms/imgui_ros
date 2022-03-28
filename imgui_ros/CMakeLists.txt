@@ -5,6 +5,7 @@ project(imgui_ros)
 find_package(catkin REQUIRED COMPONENTS
     roscpp
     topic_tools
+    pluginlib
 )
 
 catkin_package(
@@ -12,6 +13,9 @@ catkin_package(
     CFG_EXTRAS imgui_ros.cmake
     LIBRARIES imgui_ros
 )
+
+find_package(glfw3)
+find_package(OpenGL REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -35,13 +39,14 @@ add_library(imgui_ros
     contrib/implot/implot_items.cpp
 
     src/scrolling_buffer.cpp
-)
-target_include_directories(imgui_ros PRIVATE
-    include
+    src/context.cpp
+    src/window.cpp
 )
 target_include_directories(imgui_ros PUBLIC
+    include
     contrib/imgui
     contrib/implot
+    ${catkin_INCLUDE_DIRS}
 )
 target_link_libraries(imgui_ros PRIVATE
     dl
@@ -50,13 +55,32 @@ target_link_options(imgui_ros PRIVATE
     "-Wl,--no-undefined"
 )
 
-install(TARGETS imgui_ros
+
+add_executable(gui
+    src/gui.cpp
+    contrib/imgui/backends/imgui_impl_opengl3.cpp
+    contrib/imgui/backends/imgui_impl_glfw.cpp
+)
+target_include_directories(gui PRIVATE
+    ${catkin_INCLUDE_DIRS}
+)
+target_link_libraries(gui
+    imgui_ros
+    glfw
+    OpenGL::OpenGL
+    ${catkin_LIBRARIES}
+)
+
+
+install(TARGETS imgui_ros gui
+    RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
     LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
 )
 
 install(FILES
-    include/imgui_ros/window.h
+    include/imgui_ros/context.h
     include/imgui_ros/scrolling_buffer.h
+    include/imgui_ros/window.h
     DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}/
 )
 

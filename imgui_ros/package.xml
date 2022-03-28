@@ -7,4 +7,7 @@
 
     <buildtool_depend>catkin</buildtool_depend>
     <depend>topic_tools</depend>
+    <depend>pluginlib</depend>
+
+    <depend>libglfw3-dev</depend>
 </package>
