@@ -21,17 +21,13 @@ namespace rqt_imgui
 class Widget : public QOpenGLWidget, protected QOpenGLFunctions_3_2_Core, public imgui_ros::Context
 {
 public:
-    class RQTSubscriber;
-
-    explicit Widget(imgui_ros::Window* window, const ros::NodeHandle& nh, QWidget* parent = nullptr);
+    explicit Widget(std::unique_ptr<imgui_ros::Window>&& window, const ros::NodeHandle& nh, QWidget* parent = nullptr);
     ~Widget();
-
-    void shutdown();
-    void registerSubscriber(RQTSubscriber* sub);
-    void deregisterSubscriber(RQTSubscriber* sub);
 
     void saveSettings(qt_gui_cpp::Settings& settings);
     void restoreSettings(const qt_gui_cpp::Settings& settings);
+
+    void shutdown();
 
 private:
 
@@ -50,13 +46,9 @@ private:
     ros::NodeHandle& nodeHandle() override
     { return m_nh; }
 
-    imgui_ros::Subscriber subscribeRaw(const std::string& topic, int queue, const RawCb& rawCb, const ros::TransportHints& hints = {}) override;
+    std::unique_ptr<imgui_ros::Window> m_window;
 
-    bool event(QEvent * event) override;
-
-
-    imgui_ros::Window* m_window = nullptr;
-
+    std::unique_ptr<ros::CallbackQueue> m_callbackQueue;
     ros::NodeHandle m_nh;
 
     ImGuiContext* m_imgui = {};
@@ -64,8 +56,6 @@ private:
     ImPlotContext* m_implot = {};
 
     QTimer* m_updateTimer = nullptr;
-
-    std::vector<RQTSubscriber*> m_subscribers;
 
     bool m_running = true;
 
@@ -81,7 +71,7 @@ public:
 
     void initPlugin(qt_gui_cpp::PluginContext& ctx) override
     {
-        m_w = new Widget(&m_window, getPrivateNodeHandle());
+        m_w = new Widget(std::make_unique<WindowImpl>(), getPrivateNodeHandle());
         ctx.addWidget(m_w);
     }
 
@@ -97,7 +87,6 @@ public:
     { m_w->restoreSettings(instanceSettings); }
 
 private:
-    WindowImpl m_window;
     Widget* m_w = nullptr;
 };
 

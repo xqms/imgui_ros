@@ -14,6 +14,8 @@
 
 #include <imgui_ros/imgui/backends/imgui_impl_opengl3.h>
 
+#include <ros/callback_queue.h>
+
 using namespace imgui_ros;
 
 namespace
@@ -28,77 +30,19 @@ namespace
             default: return -1;
         }
     }
-
-    class MessageEvent : public QEvent
-    {
-    public:
-        static const QEvent::Type Type;
-
-        using Msg = boost::shared_ptr<const topic_tools::ShapeShifter>;
-        using Cb = std::function<void(const Msg&)>;
-
-        MessageEvent(const Msg& msg, const Cb& cb)
-         : QEvent(Type)
-         , m_msg{msg}
-         , m_cb{cb}
-        {}
-
-        void call()
-        {
-            m_cb(m_msg);
-        }
-
-    private:
-        Msg m_msg;
-        Cb m_cb;
-    };
-
-    const QEvent::Type MessageEvent::Type = static_cast<QEvent::Type>(QEvent::registerEventType());
 }
 
 namespace rqt_imgui
 {
 
-class Widget::RQTSubscriber : public imgui_ros::Subscriber::Impl
-{
-public:
-    RQTSubscriber(ros::Subscriber&& sub, rqt_imgui::Widget* w)
-     : m_sub{std::move(sub)}
-     , m_w{w}
-    {
-        w->registerSubscriber(this);
-    }
-
-    virtual ~RQTSubscriber()
-    {
-        m_w->deregisterSubscriber(this);
-    }
-
-    int getNumPublishers() override
-    {
-        return m_sub.getNumPublishers();
-    }
-
-    void shutdown() override
-    {
-        m_sub.shutdown();
-    }
-
-    void release()
-    {
-        m_w = nullptr;
-    }
-
-private:
-    ros::Subscriber m_sub;
-    rqt_imgui::Widget* m_w = nullptr;
-};
-
-Widget::Widget(Window* window, const ros::NodeHandle& nh, QWidget* parent)
+Widget::Widget(std::unique_ptr<Window>&& window, const ros::NodeHandle& nh, QWidget* parent)
  : QOpenGLWidget{parent}
- , m_window{window}
+ , m_window{std::move(window)}
  , m_nh{nh}
 {
+    m_callbackQueue = std::make_unique<ros::CallbackQueue>();
+    m_nh.setCallbackQueue(m_callbackQueue.get());
+
     m_updateTimer = new QTimer(this);
     connect(m_updateTimer, &QTimer::timeout, this, [&](){ update(); });
     m_updateTimer->start(50);
@@ -117,9 +61,6 @@ Widget::~Widget()
 
     if(m_imgui)
         ImGui::DestroyContext(m_imgui);
-
-    for(auto& sub : m_subscribers)
-        sub->release();
 }
 
 void Widget::setUpdateRate(float updateRate)
@@ -233,6 +174,9 @@ void Widget::resizeGL(int w, int h)
 
 void Widget::paintGL()
 {
+    if(!m_window)
+        return;
+
     ImGui::SetCurrentContext(m_imgui);
     ImPlot::SetCurrentContext(m_implot);
 
@@ -242,6 +186,9 @@ void Widget::paintGL()
     ImGui::SetNextWindowPos({0,0});
     ImGui::SetNextWindowSize(m_io->DisplaySize);
     ImGui::Begin("window", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoResize);
+
+    // Invoke subscriber/box callbacks
+    m_callbackQueue->callAvailable();
 
     m_window->paint();
 
@@ -257,48 +204,6 @@ void Widget::paintGL()
 void Widget::setWindowTitle(const std::string& windowTitle)
 {
     QWidget::setWindowTitle(QString::fromStdString(windowTitle));
-}
-
-Subscriber Widget::subscribeRaw(const std::string& topic, int queue, const RawCb& rawCb, const ros::TransportHints& hints)
-{
-    auto postEvent = [=](const boost::shared_ptr<const topic_tools::ShapeShifter>& msg){
-        QCoreApplication::postEvent(this, new MessageEvent(msg, rawCb));
-    };
-
-    ros::Subscriber sub = m_nh.subscribe(topic, queue, boost::function<void(const boost::shared_ptr<const topic_tools::ShapeShifter>&)>(postEvent), {}, hints);
-    return Subscriber{std::make_shared<RQTSubscriber>(std::move(sub), this)};
-}
-
-bool Widget::event(QEvent* event)
-{
-    if(event->type() == MessageEvent::Type)
-    {
-        // Ignore any queued events
-        if(!m_running)
-            return true;
-
-        reinterpret_cast<MessageEvent*>(event)->call();
-        return true;
-    }
-
-    return QOpenGLWidget::event(event);
-}
-
-void Widget::registerSubscriber(RQTSubscriber* sub)
-{
-    m_subscribers.push_back(sub);
-}
-
-void Widget::deregisterSubscriber(RQTSubscriber* sub)
-{
-    m_subscribers.erase(std::remove(m_subscribers.begin(), m_subscribers.end(), sub));
-}
-
-void Widget::shutdown()
-{
-    m_running = false;
-    for(auto& sub : m_subscribers)
-        sub->shutdown();
 }
 
 void Widget::saveSettings(qt_gui_cpp::Settings& settings)
@@ -323,6 +228,11 @@ void Widget::restoreSettings(const qt_gui_cpp::Settings& settings)
     }
 
     m_window->setState(values);
+}
+
+void Widget::shutdown()
+{
+    m_window.reset();
 }
 
 }

@@ -31,26 +31,6 @@ static void glfw_error_callback(int error, const char* description)
     fprintf(stderr, "Glfw Error %d: %s\n", error, description);
 }
 
-class SubscriberImpl : public imgui_ros::Subscriber::Impl
-{
-public:
-    explicit SubscriberImpl(const ros::Subscriber& sub)
-     : m_sub{sub}
-    {}
-
-    virtual ~SubscriberImpl()
-    {}
-
-    int getNumPublishers() override
-    { return m_sub.getNumPublishers(); }
-
-    void shutdown() override
-    { m_sub.shutdown(); }
-
-private:
-    ros::Subscriber m_sub;
-};
-
 class Window : public imgui_ros::Context
 {
 public:
@@ -70,13 +50,6 @@ public:
     void setWindowTitle(const std::string& title) override
     {
         windowTitle = title;
-    }
-
-    imgui_ros::Subscriber subscribeRaw(const std::string& topic, int queue, const RawCb& rawCb, const ros::TransportHints& hints = {}) override
-    {
-        ros::Subscriber sub = m_nh.subscribe(topic, queue, boost::function<void(const boost::shared_ptr<const topic_tools::ShapeShifter>&)>{rawCb}, {}, hints);
-
-        return imgui_ros::Subscriber{std::make_shared<SubscriberImpl>(sub)};
     }
 
     std::string windowTitle = "plugin";
