@@ -13,6 +13,9 @@ template<class Msg>
 class Box
 {
 public:
+    Box()
+    {}
+
     explicit Box(ros::NodeHandle& nh, const std::string& topic, const ros::TransportHints& hints = {})
      : m_nh{nh}
      , m_topic{topic}
@@ -32,6 +35,7 @@ public:
         m_topic = other.m_topic;
         m_hints = other.m_hints;
         m_sub = m_nh.subscribe(m_topic, 1, &Box<Msg>::handleData, this, m_hints);
+        return *this;
     }
 
     boost::shared_ptr<const Msg> message() const
@@ -43,7 +47,7 @@ private:
         m_msg = msg;
     }
 
-    ros::NodeHandle& m_nh;
+    ros::NodeHandle m_nh;
     std::string m_topic;
     ros::TransportHints m_hints;
     ros::Subscriber m_sub;
