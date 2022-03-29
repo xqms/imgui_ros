@@ -311,6 +311,8 @@ int main(int argc, char** argv)
 
         if(ImGui::BeginMainMenuBar())
         {
+            bool pluginError = false;
+
             if(ImGui::BeginMenu("Plugins"))
             {
                 auto classes = loader.getDeclaredClasses();
@@ -320,31 +322,51 @@ int main(int argc, char** argv)
                     if(ImGui::MenuItem(cls.c_str()))
                     {
                         // Load plugin
-                        auto w = std::make_unique<Window>(nh);
-                        w->instanceID = instanceIDGenerator(mt);
-                        w->plugin = loader.createInstance(cls);
-                        w->pluginName = cls;
-
-                        if(!w->plugin)
-                            ImGui::OpenPopup("PluginError");
-                        else
+                        try
                         {
-                            w->plugin->initialize(w.get());
-                            windows.push_back(std::move(w));
+                            auto w = std::make_unique<Window>(nh);
+                            w->instanceID = instanceIDGenerator(mt);
+                            w->plugin = loader.createInstance(cls);
+                            w->pluginName = cls;
+
+                            if(!w->plugin)
+                                pluginError = true;
+                            else
+                            {
+                                w->plugin->initialize(w.get());
+                                windows.push_back(std::move(w));
+                            }
+                        }
+                        catch(pluginlib::PluginlibException& e)
+                        {
+                            ROS_ERROR("Could not load plugin %s: %s",
+                                cls.c_str(), e.what()
+                            );
+                            pluginError = true;
                         }
                     }
-                }
-
-                if(ImGui::BeginPopupModal("PluginError"))
-                {
-                    ImGui::TextUnformatted("Could not load plugin. Please check terminal for error message.");
-                    ImGui::EndPopup();
                 }
 
                 ImGui::EndMenu();
             }
 
             ImGui::EndMainMenuBar();
+
+            // Plugin error modal
+            if(pluginError)
+                ImGui::OpenPopup("Plugin Error");
+
+            ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+            ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+            if(ImGui::BeginPopupModal("Plugin Error", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+            {
+                ImGui::TextUnformatted("Could not load plugin. Please check terminal for error message.");
+
+                if(ImGui::Button("OK"))
+                    ImGui::CloseCurrentPopup();
+
+                ImGui::EndPopup();
+            }
         }
 
         char buf[1024];
