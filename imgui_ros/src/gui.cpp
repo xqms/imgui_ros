@@ -12,10 +12,17 @@
 
 #include <GLFW/glfw3.h>
 
+#include <fontconfig/fontconfig.h>
+
 #include <pluginlib/class_loader.hpp>
 #include <topic_tools/shape_shifter.h>
 
 #include <random>
+#include <filesystem>
+#include <regex>
+
+#include <boost/program_options.hpp>
+
 
 using ClassLoader = pluginlib::ClassLoader<imgui_ros::Window>;
 
@@ -73,8 +80,11 @@ public:
     }
 
     std::string windowTitle = "plugin";
-    boost::shared_ptr<imgui_ros::Window> plugin;
     std::uint64_t instanceID = 0;
+
+    std::string pluginName;
+
+    boost::shared_ptr<imgui_ros::Window> plugin;
 
 private:
     ros::NodeHandle& m_nh;
@@ -82,8 +92,46 @@ private:
 
 int main(int argc, char** argv)
 {
+    namespace po = boost::program_options;
+    namespace fs = std::filesystem;
+
     ros::init(argc, argv, "gui", ros::init_options::AnonymousName);
     ros::NodeHandle nh;
+
+    po::options_description desc("Options");
+
+    desc.add_options()
+        ("help,h", "This help message")
+        ("perspective,p", po::value<std::string>()->default_value("default"), "The perspective to load")
+    ;
+
+    po::variables_map vm;
+    po::store(po::parse_command_line(argc, argv, desc), vm);
+
+    if(vm.count("help"))
+    {
+        std::cout << "Usage: gui [options]\n";
+        std::cout << desc << "\n";
+        return 0;
+    }
+
+    po::notify(vm);
+
+    // Load settings
+    fs::path configHome = [](){
+        if(auto env = getenv("XDG_CONFIG_HOME"))
+            return fs::path(env);
+        else
+            return fs::path(getenv("HOME")) / fs::path(".config");
+    }();
+    fs::path configDir = configHome / "ros.org" / "imgui_ros";
+
+    if(!fs::exists(configDir))
+        fs::create_directories(configDir);
+
+    std::string perspective = vm["perspective"].as<std::string>();
+    fs::path imguiConfigPath = configDir / (perspective + ".imgui.ini");
+    fs::path configPath = configDir / (perspective + ".ini");
 
     ClassLoader loader{"imgui_ros", "imgui_ros::Window"};
 
@@ -97,6 +145,9 @@ int main(int argc, char** argv)
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 
+    constexpr int MSAA = 4;
+    glfwWindowHint(GLFW_SAMPLES, MSAA);
+
     // Create window with graphics context
     GLFWwindow* window = glfwCreateWindow(1280, 720, "imgui_ros", NULL, NULL);
     if (window == NULL)
@@ -104,12 +155,53 @@ int main(int argc, char** argv)
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1); // Enable vsync
 
+    glEnable(GL_MULTISAMPLE);
+
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
 
+    io.IniFilename = nullptr;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+    if(fs::exists(imguiConfigPath))
+        ImGui::LoadIniSettingsFromDisk(imguiConfigPath.c_str());
+
+    // Font
+    std::string fontFile;
+    {
+        FcConfig* config = FcInitLoadConfigAndFonts();
+
+        FcPattern* pat = FcNameParse((const FcChar8*)"Noto Sans");
+        FcConfigSubstitute(config, pat, FcMatchPattern);
+        FcDefaultSubstitute(pat);
+
+        // find the font
+        FcResult res;
+        FcPattern* font = FcFontMatch(config, pat, &res);
+        if (font)
+        {
+            FcChar8* file = NULL;
+            if (FcPatternGetString(font, FC_FILE, 0, &file) == FcResultMatch)
+            {
+                // save the file to another std::string
+                fontFile = (char*)file;
+            }
+            FcPatternDestroy(font);
+        }
+
+        FcPatternDestroy(pat);
+    }
+
+    if(!fontFile.empty())
+    {
+        float scaleX = 1.0f, scaleY = 1.0f;
+        GLFWmonitor* const monitor = glfwGetPrimaryMonitor();
+        glfwGetMonitorContentScale(monitor, &scaleX, &scaleY);
+
+        io.Fonts->AddFontFromFileTTF(fontFile.c_str(), std::round(scaleX * 15.0f), NULL, NULL);
+    }
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
@@ -126,7 +218,107 @@ int main(int argc, char** argv)
 
     std::vector<std::unique_ptr<Window>> windows;
 
-    while (ros::ok() && !glfwWindowShouldClose(window))
+    // Load settings
+    if(fs::exists(configPath))
+    {
+        std::ifstream in(configPath);
+        std::string line;
+
+        static const std::regex REGEX_SECTION{R"EOS(^\[(.*)##([a-fA-F\d]+)\]$)EOS"};
+        static const std::regex REGEX_PLUGIN{R"EOS(^plugin=\"(.*)\"$)EOS"};
+        static const std::regex REGEX_SETTING{R"EOS(^setting_(.*)="(.*)"$)EOS"};
+        static const std::regex REGEX_WINDOW{R"EOS(^window=(\d+)x(\d+)\+(\d+)\+(\d+)$)EOS"};
+
+        std::string windowTitle;
+        std::uint64_t id;
+        std::string plugin;
+        std::map<std::string, std::string> settings;
+
+        int windowWidth = -1;
+        int windowHeight = -1;
+        int windowX = -1;
+        int windowY = -1;
+
+        auto instantiate = [&](){
+            if(plugin.empty())
+            {
+                ROS_ERROR("Window '%s' does not contain a plugin key, ignoring plugin!", windowTitle.c_str());
+                return;
+            }
+
+            auto w = std::make_unique<Window>(nh);
+            w->windowTitle = windowTitle;
+            w->instanceID = id;
+
+            w->pluginName = plugin;
+            w->plugin = loader.createInstance(plugin);
+            if(!w->plugin)
+            {
+                ROS_ERROR("Could not load plugin '%s', ignoring", plugin.c_str());
+                return;
+            }
+
+            w->plugin->initialize(w.get());
+            w->windowTitle = windowTitle;
+
+            w->plugin->setState(settings);
+
+            ROS_INFO("Loaded window '%s##%lu'", w->windowTitle.c_str(), w->instanceID);
+
+            windows.push_back(std::move(w));
+
+            windowTitle = {};
+        };
+
+        while(std::getline(in, line))
+        {
+            if(line.empty())
+                continue;
+
+            std::smatch matchData;
+            if(std::regex_match(line, matchData, REGEX_SECTION))
+            {
+                if(!windowTitle.empty())
+                    instantiate();
+
+                windowTitle = matchData[1].str();
+                id = std::strtoull(matchData[2].str().c_str(), nullptr, 16);
+                plugin = {};
+                settings.clear();
+            }
+            else if(std::regex_match(line, matchData, REGEX_PLUGIN))
+            {
+                plugin = matchData[1].str();
+            }
+            else if(std::regex_match(line, matchData, REGEX_SETTING))
+            {
+                settings[matchData[1].str()] = matchData[2].str();
+            }
+            else if(std::regex_match(line, matchData, REGEX_WINDOW))
+            {
+                windowWidth = std::atoi(matchData[1].str().c_str());
+                windowHeight = std::atoi(matchData[2].str().c_str());
+                windowX = std::atoi(matchData[3].str().c_str());
+                windowY = std::atoi(matchData[4].str().c_str());
+            }
+            else
+            {
+                ROS_ERROR("Invalid settings line: '%s'", line.c_str());
+                std::exit(1);
+            }
+        }
+
+        if(!windowTitle.empty())
+            instantiate();
+
+        if(windowWidth > 0)
+        {
+            glfwSetWindowPos(window, windowX, windowY);
+            glfwSetWindowSize(window, windowWidth, windowHeight);
+        }
+    }
+
+    while(ros::ok())
     {
         // Poll and handle events (inputs, window resize, etc.)
         // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
@@ -158,6 +350,7 @@ int main(int argc, char** argv)
                         auto w = std::make_unique<Window>(nh);
                         w->instanceID = instanceIDGenerator(mt);
                         w->plugin = loader.createInstance(cls);
+                        w->pluginName = cls;
 
                         if(!w->plugin)
                             ImGui::OpenPopup("PluginError");
@@ -181,7 +374,7 @@ int main(int argc, char** argv)
             ImGui::EndMainMenuBar();
         }
 
-
+        char buf[1024];
         for(auto it = windows.begin(); it != windows.end(); )
         {
             auto& w = *it;
@@ -189,7 +382,9 @@ int main(int argc, char** argv)
 
             ImGui::PushID(w->instanceID);
 
-            if(ImGui::Begin((w->windowTitle + "##" + std::to_string(w->instanceID)).c_str(), &open))
+            snprintf(buf, sizeof(buf), "%s##%lx", w->windowTitle.c_str(), w->instanceID);
+
+            if(ImGui::Begin(buf, &open))
             {
                 w->plugin->paint();
             }
@@ -202,6 +397,71 @@ int main(int argc, char** argv)
                 ++it;
             else
                 it = windows.erase(it);
+        }
+
+        if(glfwWindowShouldClose(window))
+        {
+            ImGui::OpenPopup("Close");
+
+            // Always center this window when appearing
+            ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+            ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+            bool open = true;
+            if(ImGui::BeginPopupModal("Close", &open, ImGuiWindowFlags_AlwaysAutoResize))
+            {
+                ImGui::TextUnformatted("Save perspective?");
+
+                if(ImGui::Button("Yes", ImVec2(80, 0)))
+                {
+                    ImGui::SaveIniSettingsToDisk(imguiConfigPath.c_str());
+
+                    std::ofstream out{configPath};
+
+                    int x, y, width, height;
+                    glfwGetWindowPos(window, &x, &y);
+                    glfwGetWindowSize(window, &width, &height);
+                    out << "window=" << width << "x" << height << "+" << x << "+" << y << "\n\n";
+
+                    for(auto& w : windows)
+                    {
+                        out << "[" << w->windowTitle << "##" << std::hex << w->instanceID << "]\n";
+                        out << "plugin=\"" << w->pluginName << "\"\n";
+
+                        auto settings = w->plugin->getState();
+                        for(auto& pair : settings)
+                            out << "setting_" << pair.first << "=\"" << pair.second << "\"\n";
+
+                        out << "\n";
+                    }
+
+                    break;
+                }
+
+                ImGui::SetItemDefaultFocus();
+                ImGui::SameLine();
+
+                if(ImGui::Button("No", ImVec2(80, 0)))
+                {
+                    break;
+                }
+
+                ImGui::SameLine();
+
+                if(ImGui::Button("Cancel", ImVec2(80, 0)))
+                {
+                    ImGui::CloseCurrentPopup();
+                    glfwSetWindowShouldClose(window, false);
+                }
+
+                ImGui::EndPopup();
+            }
+
+            if(!open)
+            {
+                glfwSetWindowShouldClose(window, false);
+                break;
+            }
         }
 
         // Rendering

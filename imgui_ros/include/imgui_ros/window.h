@@ -19,6 +19,9 @@ public:
     virtual void initialize(Context* context) = 0;
     virtual void resize(int w, int h) {};
     virtual void paint() = 0;
+
+    virtual void setState(const std::map<std::string, std::string>& settings);
+    virtual std::map<std::string, std::string> getState() const;
 };
 
 }

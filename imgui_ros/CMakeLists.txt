@@ -14,8 +14,10 @@ catkin_package(
     LIBRARIES imgui_ros
 )
 
-find_package(glfw3)
+find_package(glfw3 REQUIRED)
 find_package(OpenGL REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(FontConfig fontconfig IMPORTED_TARGET)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -68,6 +70,7 @@ target_link_libraries(gui
     imgui_ros
     glfw
     OpenGL::OpenGL
+    PkgConfig::FontConfig
     ${catkin_LIBRARIES}
 )
 

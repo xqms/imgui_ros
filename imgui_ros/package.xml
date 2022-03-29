@@ -10,4 +10,5 @@
     <depend>pluginlib</depend>
 
     <depend>libglfw3-dev</depend>
+    <depend>libfontconfig1-dev</depend>
 </package>

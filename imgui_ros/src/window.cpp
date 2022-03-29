@@ -10,4 +10,13 @@ Window::~Window()
 {
 }
 
+void Window::setState(const std::map<std::string, std::string>&)
+{
+}
+
+std::map<std::string, std::string> Window::getState() const
+{
+    return {};
+}
+
 }
