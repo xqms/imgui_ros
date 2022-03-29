@@ -232,7 +232,7 @@ int main(int argc, char** argv)
         std::string windowTitle;
         std::uint64_t id;
         std::string plugin;
-        std::map<std::string, std::string> settings;
+        imgui_ros::Settings settings;
 
         int windowWidth = -1;
         int windowHeight = -1;
@@ -263,7 +263,7 @@ int main(int argc, char** argv)
 
             w->plugin->setState(settings);
 
-            ROS_INFO("Loaded window '%s##%lu'", w->windowTitle.c_str(), w->instanceID);
+            ROS_DEBUG("Loaded window '%s##%lu'", w->windowTitle.c_str(), w->instanceID);
 
             windows.push_back(std::move(w));
 

@@ -11,6 +11,21 @@
 namespace imgui_ros
 {
 
+class Settings : public std::map<std::string, std::string>
+{
+public:
+    using std::map<std::string, std::string>::map;
+
+    std::optional<std::string> get(const std::string& key) const
+    {
+        auto it = find(key);
+        if(it != end())
+            return {it->second};
+        else
+            return {};
+    }
+};
+
 class Window
 {
 public:
@@ -20,8 +35,8 @@ public:
     virtual void resize(int w, int h) {};
     virtual void paint() = 0;
 
-    virtual void setState(const std::map<std::string, std::string>& settings);
-    virtual std::map<std::string, std::string> getState() const;
+    virtual void setState(const Settings& settings);
+    virtual Settings getState() const;
 };
 
 }

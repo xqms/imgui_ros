@@ -10,11 +10,11 @@ Window::~Window()
 {
 }
 
-void Window::setState(const std::map<std::string, std::string>&)
+void Window::setState(const Settings&)
 {
 }
 
-std::map<std::string, std::string> Window::getState() const
+Settings Window::getState() const
 {
     return {};
 }

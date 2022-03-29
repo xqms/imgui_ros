@@ -218,6 +218,9 @@ void Widget::initializeGL()
     }
 
     m_window->initialize(this);
+
+    if(m_queuedSettings)
+        m_window->setState(*m_queuedSettings);
 }
 
 void Widget::resizeGL(int w, int h)
@@ -237,8 +240,8 @@ void Widget::paintGL()
     ImGui::NewFrame();
 
     ImGui::SetNextWindowPos({0,0});
-	ImGui::SetNextWindowSize(m_io->DisplaySize);
-	ImGui::Begin("window", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoResize);
+    ImGui::SetNextWindowSize(m_io->DisplaySize);
+    ImGui::Begin("window", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoResize);
 
     m_window->paint();
 
@@ -296,6 +299,30 @@ void Widget::shutdown()
     m_running = false;
     for(auto& sub : m_subscribers)
         sub->shutdown();
+}
+
+void Widget::saveSettings(qt_gui_cpp::Settings& settings)
+{
+    auto values = m_window->getState();
+
+    for(auto& pair : values)
+        settings.setValue(QString::fromStdString(pair.first), QString::fromStdString(pair.second));
+}
+
+void Widget::restoreSettings(const qt_gui_cpp::Settings& settings)
+{
+    imgui_ros::Settings values;
+    for(auto key : settings.childKeys())
+        values[key.toStdString()] = settings.value(key).toString().toStdString();
+
+    // If the context has not been initialized yet, delay settings restoration
+    if(!m_imgui)
+    {
+        m_queuedSettings = values;
+        return;
+    }
+
+    m_window->setState(values);
 }
 
 }

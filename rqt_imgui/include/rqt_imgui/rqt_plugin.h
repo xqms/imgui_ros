@@ -30,6 +30,9 @@ public:
     void registerSubscriber(RQTSubscriber* sub);
     void deregisterSubscriber(RQTSubscriber* sub);
 
+    void saveSettings(qt_gui_cpp::Settings& settings);
+    void restoreSettings(const qt_gui_cpp::Settings& settings);
+
 private:
 
     void initializeGL() override;
@@ -65,6 +68,8 @@ private:
     std::vector<RQTSubscriber*> m_subscribers;
 
     bool m_running = true;
+
+    std::optional<imgui_ros::Settings> m_queuedSettings;
 };
 
 template<class WindowImpl>
@@ -84,6 +89,12 @@ public:
     {
         m_w->shutdown();
     }
+
+    void saveSettings(qt_gui_cpp::Settings&, qt_gui_cpp::Settings& instanceSettings) const override
+    { m_w->saveSettings(instanceSettings); }
+
+    void restoreSettings(const qt_gui_cpp::Settings&, const qt_gui_cpp::Settings& instanceSettings) override
+    { m_w->restoreSettings(instanceSettings); }
 
 private:
     WindowImpl m_window;
