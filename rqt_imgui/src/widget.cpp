@@ -1,7 +1,7 @@
 // rqt imgui integration
 // Author: Max Schwarz <max.schwarz@ais.uni-bonn.de>
 
-#include <rqt_imgui/rqt_plugin.h>
+#include "widget.h"
 
 #include <QMouseEvent>
 #include <QTimer>
@@ -35,9 +35,9 @@ namespace
 namespace rqt_imgui
 {
 
-Widget::Widget(std::unique_ptr<Window>&& window, const ros::NodeHandle& nh, QWidget* parent)
+Widget::Widget(const boost::shared_ptr<Window>& window, const ros::NodeHandle& nh, QWidget* parent)
  : QOpenGLWidget{parent}
- , m_window{std::move(window)}
+ , m_window{window}
  , m_nh{nh}
 {
     m_callbackQueue = std::make_unique<ros::CallbackQueue>();

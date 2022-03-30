@@ -13,35 +13,32 @@ find_package(catkin REQUIRED COMPONENTS
     imgui_ros
 )
 
-catkin_package(
-    CATKIN_DEPENDS imgui_ros
-    CFG_EXTRAS rqt_imgui.cmake
-    LIBRARIES rqt_imgui
-)
+catkin_package()
 
 set(CMAKE_CXX_STANDARD 17)
 
-add_library(rqt_imgui
-    src/rqt_plugin.cpp
+add_library(rqt_imgui_provider
+    src/imgui_ros_plugin_provider.cpp
+    src/widget.cpp
 )
-target_include_directories(rqt_imgui PRIVATE
+target_include_directories(rqt_imgui_provider PRIVATE
     ${catkin_INCLUDE_DIRS}
     include
 )
-target_link_libraries(rqt_imgui
+target_link_libraries(rqt_imgui_provider
     ${catkin_LIBRARIES}
     Qt5::Widgets
     PkgConfig::FontConfig
 )
-target_link_options(rqt_imgui PRIVATE
+target_link_options(rqt_imgui_provider PRIVATE
     "-Wl,--no-undefined"
 )
 
-install(TARGETS rqt_imgui
+install(TARGETS rqt_imgui_provider
     LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
 )
 
 install(FILES
-    include/rqt_imgui/rqt_plugin.h
-    DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}/
+    qt_gui_plugin.xml
+    DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )

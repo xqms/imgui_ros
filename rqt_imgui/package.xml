@@ -9,4 +9,9 @@
     <depend>imgui_ros</depend>
     <depend>rqt_gui</depend>
     <depend>rqt_gui_cpp</depend>
+    <depend>qt_gui</depend>
+
+    <export>
+        <qt_gui plugin="${prefix}/qt_gui_plugin.xml" />
+    </export>
 </package>
