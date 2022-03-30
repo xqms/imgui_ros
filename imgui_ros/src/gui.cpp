@@ -307,6 +307,13 @@ int main(int argc, char** argv)
 
         ros::spinOnce();
 
+        // Save CPU when we are minimized
+        if(glfwGetWindowAttrib(window, GLFW_ICONIFIED))
+        {
+            ros::WallDuration(0.1).sleep();
+            continue;
+        }
+
         // Start the Dear ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -352,6 +359,20 @@ int main(int argc, char** argv)
                             pluginError = true;
                         }
                     }
+                }
+
+                ImGui::EndMenu();
+            }
+
+            if(ImGui::BeginMenu("View"))
+            {
+                if(ImGui::BeginMenu("Style"))
+                {
+                    if(ImGui::Selectable("Dark")) ImGui::StyleColorsDark();
+                    if(ImGui::Selectable("Light")) ImGui::StyleColorsLight();
+                    if(ImGui::Selectable("Classic")) ImGui::StyleColorsClassic();
+
+                    ImGui::EndMenu();
                 }
 
                 ImGui::EndMenu();
