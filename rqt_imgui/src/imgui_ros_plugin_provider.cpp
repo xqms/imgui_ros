@@ -30,6 +30,10 @@ public:
     void initPlugin(qt_gui_cpp::PluginContext& ctx) override
     {
         m_w = new Widget(m_window, m_nh);
+
+        // Important, otherwise the window does not get deleted before the widget
+        m_window.reset();
+
         ctx.addWidget(m_w);
     }
 
