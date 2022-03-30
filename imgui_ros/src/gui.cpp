@@ -59,6 +59,8 @@ public:
 
     boost::shared_ptr<imgui_ros::Window> plugin;
 
+    imgui_ros::Settings savedState;
+
 private:
     ros::NodeHandle& m_nh;
 };
@@ -190,6 +192,7 @@ int main(int argc, char** argv)
     std::uniform_int_distribution<std::uint64_t> instanceIDGenerator;
 
     std::vector<std::unique_ptr<Window>> windows;
+    bool windowListDirty = false;
 
     // Load settings
     if(fs::exists(configPath))
@@ -235,6 +238,7 @@ int main(int argc, char** argv)
             w->windowTitle = windowTitle;
 
             w->plugin->setState(settings);
+            w->savedState = settings;
 
             ROS_DEBUG("Loaded window '%s##%lu'", w->windowTitle.c_str(), w->instanceID);
 
@@ -335,6 +339,7 @@ int main(int argc, char** argv)
                             {
                                 w->plugin->initialize(w.get());
                                 windows.push_back(std::move(w));
+                                windowListDirty = true;
                             }
                         }
                         catch(pluginlib::PluginlibException& e)
@@ -391,11 +396,26 @@ int main(int argc, char** argv)
             if(open)
                 ++it;
             else
+            {
                 it = windows.erase(it);
+                windowListDirty = true;
+            }
         }
 
         if(glfwWindowShouldClose(window))
         {
+            // Has any configuration changed?
+            if(!windowListDirty && !io.WantSaveIniSettings)
+            {
+                if(std::all_of(windows.begin(), windows.end(), [&](auto& w){
+                    return w->savedState == w->plugin->getState();
+                }))
+                {
+                    // Nothing changed at all.
+                    break;
+                }
+            }
+
             ImGui::OpenPopup("Close");
 
             // Always center this window when appearing
