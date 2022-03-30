@@ -296,6 +296,8 @@ int main(int argc, char** argv)
         }
     }
 
+    char renameWindowBuf[1024];
+
     while(ros::ok())
     {
         // Poll and handle events (inputs, window resize, etc.)
@@ -340,6 +342,7 @@ int main(int argc, char** argv)
                             w->instanceID = instanceIDGenerator(mt);
                             w->plugin = loader.createInstance(cls);
                             w->pluginName = cls;
+                            w->windowTitle = cls;
 
                             if(!w->plugin)
                                 pluginError = true;
@@ -407,11 +410,31 @@ int main(int argc, char** argv)
 
             if(ImGui::Begin(buf, &open))
             {
-                // Did somebody double click on the window title?
-                if(ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                if(ImGui::BeginPopupContextItem())
                 {
-                    fprintf(stderr, "Click!\n");
-                    // TODO: Set window title
+                    if(ImGui::IsWindowAppearing())
+                    {
+                        strncpy(renameWindowBuf, w->windowTitle.c_str(), sizeof(renameWindowBuf));
+                        renameWindowBuf[sizeof(renameWindowBuf)-1] = 0;
+                    }
+
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::Text("Name:");
+
+                    ImGui::SameLine();
+
+                    ImGui::SetKeyboardFocusHere();
+                    if(ImGui::InputText("##edit",
+                        renameWindowBuf, IM_ARRAYSIZE(renameWindowBuf),
+                        ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_EnterReturnsTrue
+                    ))
+                    {
+                        w->windowTitle = renameWindowBuf;
+                        windowListDirty = true;
+                        ImGui::CloseCurrentPopup();
+                    }
+
+                    ImGui::EndPopup();
                 }
 
                 w->plugin->paint();
