@@ -30,6 +30,28 @@ namespace
             default: return -1;
         }
     }
+
+    Qt::CursorShape qtCursorShape(ImGuiMouseCursor cursor)
+    {
+        switch(static_cast<ImGuiMouseCursor_>(cursor))
+        {
+            case ImGuiMouseCursor_None:       return Qt::CursorShape::BlankCursor;
+            case ImGuiMouseCursor_Arrow:      return Qt::CursorShape::ArrowCursor;
+            case ImGuiMouseCursor_TextInput:  return Qt::CursorShape::IBeamCursor;
+            case ImGuiMouseCursor_ResizeAll:  return Qt::CursorShape::SizeAllCursor;
+            case ImGuiMouseCursor_ResizeNS:   return Qt::CursorShape::SizeVerCursor;
+            case ImGuiMouseCursor_ResizeEW:   return Qt::CursorShape::SizeHorCursor;
+            case ImGuiMouseCursor_ResizeNESW: return Qt::CursorShape::SizeBDiagCursor;
+            case ImGuiMouseCursor_ResizeNWSE: return Qt::CursorShape::SizeFDiagCursor;
+            case ImGuiMouseCursor_Hand:       return Qt::CursorShape::PointingHandCursor;
+            case ImGuiMouseCursor_NotAllowed: return Qt::CursorShape::ForbiddenCursor;
+
+            case ImGuiMouseCursor_COUNT:
+                throw std::logic_error{"Invalid ImGuiMouseCursor"};
+        }
+
+        throw std::logic_error{"Invalid ImGuiMouseCursor"};
+    }
 }
 
 namespace rqt_imgui
@@ -155,7 +177,7 @@ void Widget::initializeGL()
 
     if(!fontFile.empty())
     {
-        m_io->Fonts->AddFontFromFileTTF(fontFile.c_str(), fontInfo().pixelSize(), NULL, NULL);
+        m_io->Fonts->AddFontFromFileTTF(fontFile.c_str(), fontMetrics().height(), NULL, NULL);
     }
 
     m_window->setContext(this);
@@ -180,6 +202,8 @@ void Widget::paintGL()
 
     ImGui::SetCurrentContext(m_imgui);
     ImPlot::SetCurrentContext(m_implot);
+
+    updateCursor();
 
     ImGui_ImplOpenGL3_NewFrame();
     ImGui::NewFrame();
@@ -234,6 +258,21 @@ void Widget::restoreSettings(const qt_gui_cpp::Settings& settings)
 void Widget::shutdown()
 {
     m_window.reset();
+}
+
+void Widget::updateCursor()
+{
+    if(m_io->ConfigFlags & ImGuiConfigFlags_NoMouseCursorChange)
+        return;
+
+    if(m_io->MouseDrawCursor)
+    {
+        setCursor(Qt::CursorShape::BlankCursor);
+        return;
+    }
+
+    const ImGuiMouseCursor imgui_cursor = ImGui::GetMouseCursor();
+    setCursor(qtCursorShape(imgui_cursor));
 }
 
 }

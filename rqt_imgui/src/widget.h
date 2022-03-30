@@ -43,6 +43,8 @@ private:
     void setWindowTitle(const std::string& windowTitle) override;
     void setUpdateRate(float rate) override;
 
+    void updateCursor();
+
     ros::NodeHandle& nodeHandle() override
     { return m_nh; }
 
