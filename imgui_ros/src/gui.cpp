@@ -188,7 +188,7 @@ int main(int argc, char** argv)
     // Implot
     ImPlot::CreateContext();
 
-    std::mt19937 mt(0);
+    std::mt19937 mt(time(nullptr));
     std::uniform_int_distribution<std::uint64_t> instanceIDGenerator;
 
     std::vector<std::unique_ptr<Window>> windows;
@@ -403,18 +403,21 @@ int main(int argc, char** argv)
             auto& w = *it;
             bool open = true;
 
-            ImGui::PushID(w->instanceID);
-
-            snprintf(buf, sizeof(buf), "%s##%lx", w->windowTitle.c_str(), w->instanceID);
+            snprintf(buf, sizeof(buf), "%s###%lx", w->windowTitle.c_str(), w->instanceID);
 
             if(ImGui::Begin(buf, &open))
             {
+                // Did somebody double click on the window title?
+                if(ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                {
+                    fprintf(stderr, "Click!\n");
+                    // TODO: Set window title
+                }
+
                 w->plugin->paint();
             }
 
             ImGui::End();
-
-            ImGui::PopID();
 
             if(open)
                 ++it;
