@@ -175,7 +175,7 @@ int main(int argc, char** argv)
         GLFWmonitor* const monitor = glfwGetPrimaryMonitor();
         glfwGetMonitorContentScale(monitor, &scaleX, &scaleY);
 
-        io.Fonts->AddFontFromFileTTF(fontFile.c_str(), std::round(scaleX * 15.0f), NULL, NULL);
+        io.Fonts->AddFontFromFileTTF(fontFile.c_str(), std::round(scaleX * 16.0f), NULL, NULL);
     }
 
     // Setup Dear ImGui style

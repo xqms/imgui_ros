@@ -11,4 +11,5 @@
 
     <depend>libglfw3-dev</depend>
     <depend>libfontconfig1-dev</depend>
+    <depend>libfreetype6-dev</depend>
 </package>

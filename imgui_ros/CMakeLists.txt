@@ -19,6 +19,7 @@ set(OpenGL_GL_PREFERENCE GLVND)
 find_package(OpenGL REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(FontConfig fontconfig IMPORTED_TARGET)
+pkg_check_modules(freetype freetype2 IMPORTED_TARGET)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -36,6 +37,7 @@ add_library(imgui_ros
     contrib/imgui/imgui_tables.cpp
     contrib/imgui/imgui_widgets.cpp
     contrib/imgui/backends/imgui_impl_opengl3.cpp
+    contrib/imgui/misc/freetype/imgui_freetype.cpp
 
     # ImPlot
     contrib/implot/implot.cpp
@@ -46,6 +48,9 @@ add_library(imgui_ros
     src/topic_selector.cpp
     src/window.cpp
 )
+target_compile_definitions(imgui_ros PUBLIC
+    IMGUI_ENABLE_FREETYPE=1
+)
 target_include_directories(imgui_ros PUBLIC
     include
     contrib/imgui
@@ -55,6 +60,7 @@ target_include_directories(imgui_ros PUBLIC
 target_link_libraries(imgui_ros PRIVATE
     dl
     ${roscpp_LIBRARIES}
+    PkgConfig::freetype
 )
 target_link_options(imgui_ros PRIVATE
     "-Wl,--no-undefined"
