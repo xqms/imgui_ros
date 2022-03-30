@@ -234,7 +234,8 @@ int main(int argc, char** argv)
                 return;
             }
 
-            w->plugin->initialize(w.get());
+            w->plugin->setContext(w.get());
+            w->plugin->initialize();
             w->windowTitle = windowTitle;
 
             w->plugin->setState(settings);
@@ -337,7 +338,8 @@ int main(int argc, char** argv)
                                 pluginError = true;
                             else
                             {
-                                w->plugin->initialize(w.get());
+                                w->plugin->setContext(w.get());
+                                w->plugin->initialize();
                                 windows.push_back(std::move(w));
                                 windowListDirty = true;
                             }

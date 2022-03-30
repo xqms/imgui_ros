@@ -15,6 +15,7 @@ catkin_package(
 )
 
 find_package(glfw3 REQUIRED)
+set(OpenGL_GL_PREFERENCE GLVND)
 find_package(OpenGL REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(FontConfig fontconfig IMPORTED_TARGET)
@@ -40,8 +41,9 @@ add_library(imgui_ros
     contrib/implot/implot.cpp
     contrib/implot/implot_items.cpp
 
-    src/scrolling_buffer.cpp
     src/context.cpp
+    src/scrolling_buffer.cpp
+    src/topic_selector.cpp
     src/window.cpp
 )
 target_include_directories(imgui_ros PUBLIC
@@ -52,6 +54,7 @@ target_include_directories(imgui_ros PUBLIC
 )
 target_link_libraries(imgui_ros PRIVATE
     dl
+    ${roscpp_LIBRARIES}
 )
 target_link_options(imgui_ros PRIVATE
     "-Wl,--no-undefined"
@@ -84,6 +87,7 @@ install(FILES
     include/imgui_ros/box.h
     include/imgui_ros/context.h
     include/imgui_ros/scrolling_buffer.h
+    include/imgui_ros/topic_selector.h
     include/imgui_ros/window.h
     DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}/
 )

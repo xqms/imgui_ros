@@ -158,7 +158,8 @@ void Widget::initializeGL()
         m_io->Fonts->AddFontFromFileTTF(fontFile.c_str(), fontInfo().pixelSize(), NULL, NULL);
     }
 
-    m_window->initialize(this);
+    m_window->setContext(this);
+    m_window->initialize();
 
     if(m_queuedSettings)
         m_window->setState(*m_queuedSettings);

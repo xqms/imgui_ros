@@ -10,6 +10,11 @@ Window::~Window()
 {
 }
 
+void Window::setContext(Context* ctx)
+{
+    m_context = ctx;
+}
+
 void Window::setState(const Settings&)
 {
 }

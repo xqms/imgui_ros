@@ -31,12 +31,19 @@ class Window
 public:
     virtual ~Window();
 
-    virtual void initialize(Context* context) = 0;
-    virtual void resize(int w, int h) {};
+    void setContext(Context* context);
+    inline Context* context()
+    { return m_context; }
+
+    virtual void initialize() {}
+    virtual void resize(int w, int h) {}
     virtual void paint() = 0;
 
     virtual void setState(const Settings& settings);
     virtual Settings getState() const;
+
+private:
+    Context* m_context = nullptr;
 };
 
 }
