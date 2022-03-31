@@ -1,0 +1,15 @@
+<package format="3">
+    <name>imgui_log_viewer</name>
+    <description>ROS log viewer for imgui_ros</description>
+    <version>0.0.1</version>
+    <license>MIT</license>
+    <maintainer email="max.schwarz@ais.uni-bonn.de">Max Schwarz</maintainer>
+
+    <buildtool_depend>catkin</buildtool_depend>
+    <depend>imgui_ros</depend>
+    <depend>rosgraph_msgs</depend>
+
+    <export>
+        <imgui_ros plugin="${prefix}/imgui_plugin.xml" />
+    </export>
+</package>

@@ -1,0 +1,14 @@
+<library path="lib/libimgui_log_viewer">
+    <class name="imgui_log_viewer/LogViewer" type="imgui_log_viewer::LogViewer" base_class_type="imgui_ros::Window">
+        <description>
+            ROS Log Viewer
+        </description>
+        <qtgui>
+            <label>IMGUI Log Viewer</label>
+            <statustip>Log Viewer</statustip>
+            <group>
+                <label>Logging</label>
+            </group>
+        </qtgui>
+    </class>
+</library>
