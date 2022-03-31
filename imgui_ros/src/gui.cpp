@@ -30,6 +30,25 @@ static void glfw_error_callback(int error, const char* description)
     fprintf(stderr, "Glfw Error %d: %s\n", error, description);
 }
 
+struct FontSpec
+{
+    std::string query;
+    int height;
+};
+bool operator<(const FontSpec& a, const FontSpec& b)
+{
+    if(a.query < b.query)
+        return true;
+    if(a.query > b.query)
+        return false;
+
+    return a.height < b.height;
+}
+
+std::map<FontSpec, ImFont*> g_fontCache;
+float g_fontDefaultHeight = 1.0f;
+FcConfig* g_fontConfig = nullptr;
+
 class Window : public imgui_ros::Context
 {
 public:
@@ -49,6 +68,44 @@ public:
     void setWindowTitle(const std::string& title) override
     {
         windowTitle = title;
+    }
+
+    ImFont* loadFont(const std::string& query, float relativeSize = 1.0f) override
+    {
+        int height = std::round(relativeSize * g_fontDefaultHeight);
+        FontSpec spec{query, height};
+
+        if(auto it = g_fontCache.find(spec); it != g_fontCache.end())
+            return it->second;
+
+        std::string fontPath;
+
+        FcPattern* pat = FcNameParse((const FcChar8*)query.c_str());
+        FcConfigSubstitute(g_fontConfig, pat, FcMatchPattern);
+        FcDefaultSubstitute(pat);
+
+        // find the font
+        FcResult res;
+        FcPattern* match = FcFontMatch(g_fontConfig, pat, &res);
+        if (match)
+        {
+            FcChar8* file = NULL;
+            if (FcPatternGetString(match, FC_FILE, 0, &file) == FcResultMatch)
+                fontPath = (char*)file;
+            FcPatternDestroy(match);
+        }
+
+        FcPatternDestroy(pat);
+
+        // Fallback: current font
+        ImFont* font = ImGui::GetFont();
+
+        if(!fontPath.empty())
+            font = ImGui::GetIO().Fonts->AddFontFromFileTTF(fontPath.c_str(), height, NULL, NULL);
+
+        g_fontCache[spec] = font;
+
+        return font;
     }
 
     std::string windowTitle = "plugin";
@@ -145,15 +202,15 @@ int main(int argc, char** argv)
     // Font
     std::string fontFile;
     {
-        FcConfig* config = FcInitLoadConfigAndFonts();
+        g_fontConfig = FcInitLoadConfigAndFonts();
 
         FcPattern* pat = FcNameParse((const FcChar8*)"Noto Sans");
-        FcConfigSubstitute(config, pat, FcMatchPattern);
+        FcConfigSubstitute(g_fontConfig, pat, FcMatchPattern);
         FcDefaultSubstitute(pat);
 
         // find the font
         FcResult res;
-        FcPattern* font = FcFontMatch(config, pat, &res);
+        FcPattern* font = FcFontMatch(g_fontConfig, pat, &res);
         if (font)
         {
             FcChar8* file = NULL;
@@ -174,7 +231,8 @@ int main(int argc, char** argv)
         GLFWmonitor* const monitor = glfwGetPrimaryMonitor();
         glfwGetMonitorContentScale(monitor, &scaleX, &scaleY);
 
-        io.Fonts->AddFontFromFileTTF(fontFile.c_str(), std::round(scaleX * 16.0f), NULL, NULL);
+        g_fontDefaultHeight = std::round(scaleX * 16.0f);
+        io.Fonts->AddFontFromFileTTF(fontFile.c_str(), g_fontDefaultHeight, NULL, NULL);
     }
 
     // Setup Dear ImGui style

@@ -11,6 +11,8 @@
 
 #include <imgui_ros/window.h>
 
+#include <fontconfig/fontconfig.h>
+
 struct ImGuiContext;
 struct ImGuiIO;
 struct ImPlotContext;
@@ -30,7 +32,6 @@ public:
     void shutdown();
 
 private:
-
     void initializeGL() override;
     void resizeGL(int w, int h) override;
 
@@ -42,6 +43,7 @@ private:
 
     void setWindowTitle(const std::string& windowTitle) override;
     void setUpdateRate(float rate) override;
+    ImFont* loadFont(const std::string& query, float relativeSize = 1.0f) override;
 
     void updateCursor();
 
@@ -57,11 +59,15 @@ private:
     ImGuiIO* m_io = {};
     ImPlotContext* m_implot = {};
 
+    FcConfig* m_fontConfig = {};
+
     QTimer* m_updateTimer = nullptr;
 
     bool m_running = true;
 
     std::optional<imgui_ros::Settings> m_queuedSettings;
+
+    int m_defaultFontSize = -1;
 };
 
 }

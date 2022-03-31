@@ -9,6 +9,8 @@
 
 #include "box.h"
 
+struct ImFont;
+
 namespace imgui_ros
 {
 
@@ -23,6 +25,8 @@ public:
     template<class Msg>
     Box<Msg> subscribeBox(const std::string& topic, const ros::TransportHints& hints = {})
     { return Box<Msg>(nodeHandle(), topic, hints); }
+
+    virtual ImFont* loadFont(const std::string& query, float relativeSize = 1.0f) = 0;
 };
 
 }

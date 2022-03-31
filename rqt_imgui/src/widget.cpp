@@ -83,6 +83,9 @@ Widget::~Widget()
 
     if(m_imgui)
         ImGui::DestroyContext(m_imgui);
+
+    if(m_fontConfig)
+        FcConfigDestroy(m_fontConfig);
 }
 
 void Widget::setUpdateRate(float updateRate)
@@ -149,18 +152,18 @@ void Widget::initializeGL()
 
     std::string fontFile;
     {
-        FcConfig* config = FcInitLoadConfigAndFonts();
+        m_fontConfig = FcInitLoadConfigAndFonts();
 
         // configure the search pattern,
         // assume "name" is a std::string with the desired font name in it
         auto fontName = fontInfo().family().toLocal8Bit();
         FcPattern* pat = FcNameParse((const FcChar8*)(fontName.data()));
-        FcConfigSubstitute(config, pat, FcMatchPattern);
+        FcConfigSubstitute(m_fontConfig, pat, FcMatchPattern);
         FcDefaultSubstitute(pat);
 
         // find the font
         FcResult res;
-        FcPattern* font = FcFontMatch(config, pat, &res);
+        FcPattern* font = FcFontMatch(m_fontConfig, pat, &res);
         if (font)
         {
             FcChar8* file = NULL;
@@ -178,6 +181,7 @@ void Widget::initializeGL()
     if(!fontFile.empty())
     {
         m_io->Fonts->AddFontFromFileTTF(fontFile.c_str(), fontMetrics().height(), NULL, NULL);
+        m_defaultFontSize = fontMetrics().height();
     }
 
     m_window->setContext(this);
@@ -273,6 +277,37 @@ void Widget::updateCursor()
 
     const ImGuiMouseCursor imgui_cursor = ImGui::GetMouseCursor();
     setCursor(qtCursorShape(imgui_cursor));
+}
+
+ImFont* Widget::loadFont(const std::string& query, float relativeSize)
+{
+    int height = std::round(relativeSize * m_defaultFontSize);
+    std::string fontPath;
+
+    FcPattern* pat = FcNameParse((const FcChar8*)query.c_str());
+    FcConfigSubstitute(m_fontConfig, pat, FcMatchPattern);
+    FcDefaultSubstitute(pat);
+
+    // find the font
+    FcResult res;
+    FcPattern* match = FcFontMatch(m_fontConfig, pat, &res);
+    if (match)
+    {
+        FcChar8* file = NULL;
+        if (FcPatternGetString(match, FC_FILE, 0, &file) == FcResultMatch)
+            fontPath = (char*)file;
+        FcPatternDestroy(match);
+    }
+
+    FcPatternDestroy(pat);
+
+    // Fallback: current font
+    ImFont* font = ImGui::GetFont();
+
+    if(!fontPath.empty())
+        font = ImGui::GetIO().Fonts->AddFontFromFileTTF(fontPath.c_str(), height, NULL, NULL);
+
+    return font;
 }
 
 }
