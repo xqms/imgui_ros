@@ -6,7 +6,7 @@
     <maintainer email="max.schwarz@ais.uni-bonn.de">Max Schwarz</maintainer>
 
     <buildtool_depend>catkin</buildtool_depend>
-    <depend>topic_tools</depend>
+    <depend>roscpp</depend>
     <depend>pluginlib</depend>
 
     <depend>libglfw3-dev</depend>

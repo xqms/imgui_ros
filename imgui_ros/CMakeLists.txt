@@ -4,12 +4,11 @@ project(imgui_ros)
 
 find_package(catkin REQUIRED COMPONENTS
     roscpp
-    topic_tools
     pluginlib
 )
 
 catkin_package(
-    CATKIN_DEPENDS topic_tools
+    CATKIN_DEPENDS pluginlib roscpp
     CFG_EXTRAS imgui_ros.cmake
     LIBRARIES imgui_ros
 )

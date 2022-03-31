@@ -15,7 +15,6 @@
 #include <fontconfig/fontconfig.h>
 
 #include <pluginlib/class_loader.hpp>
-#include <topic_tools/shape_shifter.h>
 
 #include <random>
 #include <filesystem>

@@ -7,6 +7,7 @@
 #include "context.h"
 
 #include <string>
+#include <optional>
 
 namespace imgui_ros
 {

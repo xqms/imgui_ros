@@ -6,7 +6,6 @@
 
 #include <ros/subscriber.h>
 #include <ros/transport_hints.h>
-#include <topic_tools/shape_shifter.h>
 
 #include "box.h"
 

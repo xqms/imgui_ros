@@ -10,6 +10,8 @@
 #include <QMessageBox>
 #include <QMetaObject>
 
+#include <ros/master.h>
+
 #include <thread>
 
 #include "widget.h"
