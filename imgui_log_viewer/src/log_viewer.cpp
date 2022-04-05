@@ -79,7 +79,7 @@ public:
             ImGui::EndTable();
         }
 
-        if(!ImGui::BeginTable("log", 3, ImGuiTableFlags_BordersV | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingFixedFit, {-1, -1}))
+        if(!ImGui::BeginTable("log", 3, ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingFixedFit, {-1, -1}))
             return;
 
         ImGui::PushFont(m_font);
@@ -96,7 +96,6 @@ public:
 
         ImGui::TableHeadersRow();
 
-        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, 0xff000000);
 
         char timeBuf[256];
         tm timeResult{};
@@ -107,12 +106,15 @@ public:
         {
             const auto& entry = m_entries[row];
 
-            if(filterActive && !std::strstr(entry.msg->msg.c_str(), m_filterBuf))
+            if(filterActive
+                && !std::strstr(entry.msg->msg.c_str(), m_filterBuf)
+                && !std::strstr(entry.msg->name.c_str(), m_filterBuf))
                 continue;
 
             bool rowIsHovered = false;
 
             ImGui::TableNextRow();
+            ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, 0xff000000);
 
             ImGui::PushID(row);
 
@@ -184,6 +186,18 @@ public:
 
             if(ImGui::BeginPopup("context"))
             {
+                auto file = std::strrchr(entry.msg->file.c_str(), '/');
+                if(file)
+                    file = file + 1;
+                else
+                    file = entry.msg->file.c_str();
+
+                ImGui::BeginDisabled();
+                ImGui::Text("%s:%d", file, entry.msg->line);
+                ImGui::Text("%s()", entry.msg->function.c_str());
+                ImGui::EndDisabled();
+                ImGui::Separator();
+
                 char cmdBuf[1024];
 
                 if(ImGui::Selectable("Open in Kate"))
