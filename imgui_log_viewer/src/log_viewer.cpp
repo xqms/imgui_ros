@@ -36,7 +36,7 @@ class LogViewer : public imgui_ros::Window
 public:
     void initialize() override
     {
-        m_font = context()->loadFont("Monospace");
+        m_font = context()->loadFont("Monospace", 0.9f);
 
         m_sub = context()->nodeHandle().subscribe("/rosout_agg", 20, &LogViewer::append, this);
     }
