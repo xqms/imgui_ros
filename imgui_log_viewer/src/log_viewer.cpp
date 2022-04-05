@@ -4,6 +4,7 @@
 #include <imgui_ros/window.h>
 
 #include <imgui_ros/imgui/imgui.h>
+#include <imgui_ros/icons.h>
 #include <imgui_ros/math.h>
 
 #include <pluginlib/class_list_macros.hpp>
@@ -14,6 +15,21 @@
 
 namespace imgui_log_viewer
 {
+
+namespace
+{
+    void ToggleButton(const char* label, bool* state, const ImVec2& size = ImVec2(0,0))
+    {
+        ImGui::PushStyleColor(ImGuiCol_Button,
+            *state ? ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive)
+                   : ImGui::GetStyleColorVec4(ImGuiCol_Button));
+
+        if(ImGui::Button(label, size))
+            *state = !*state;
+
+        ImGui::PopStyleColor();
+    }
+}
 
 class LogViewer : public imgui_ros::Window
 {
@@ -27,9 +43,46 @@ public:
 
     void paint() override
     {
-        ImGui::PushFont(m_font);
+        if(ImGui::BeginTable("toolbar", 2))
+        {
+            ImGui::TableSetupColumn("filter", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize);
+            ImGui::TableSetupColumn("buttons", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize);
 
-        ImGui::BeginTable("log", 3, ImGuiTableFlags_BordersV | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingFixedFit, {-1, -1});
+            ImGui::TableNextRow();
+
+            ImGui::TableNextColumn();
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(imgui_ros::icon(imgui_ros::Icon::FILTER));
+            ImGui::SameLine();
+            ImGui::PushItemWidth(-FLT_MIN);
+
+            if(m_filterBuf[0] != 0)
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGui::GetColorU32(ImGuiCol_FrameBgActive));
+            else
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGui::GetColorU32(ImGuiCol_FrameBg));
+
+            ImGui::InputTextWithHint("##filter", "Filter", m_filterBuf, sizeof(m_filterBuf));
+
+            ImGui::PopStyleColor();
+
+
+            ImGui::TableNextColumn();
+
+            ImGui::SameLine();
+
+            ToggleButton(imgui_ros::icon(imgui_ros::Icon::PAUSE), &m_paused);
+
+            ImGui::SameLine();
+            if(ImGui::Button(imgui_ros::icon(imgui_ros::Icon::TRASH)))
+                m_entries.clear();
+
+            ImGui::EndTable();
+        }
+
+        if(!ImGui::BeginTable("log", 3, ImGuiTableFlags_BordersV | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingFixedFit, {-1, -1}))
+            return;
+
+        ImGui::PushFont(m_font);
 
         if(m_defaultWidthNode < 0)
         {
@@ -48,9 +101,14 @@ public:
         char timeBuf[256];
         tm timeResult{};
 
+        bool filterActive = m_filterBuf[0] != 0;
+
         for(std::size_t row = 0; row < m_entries.size(); ++row)
         {
             const auto& entry = m_entries[row];
+
+            if(filterActive && !std::strstr(entry.msg->msg.c_str(), m_filterBuf))
+                continue;
 
             bool rowIsHovered = false;
 
@@ -91,7 +149,30 @@ public:
                 rowIsHovered = true;
 
             ImGui::TableNextColumn();
-            ImGui::TextUnformatted(entry.msg->msg.c_str());
+
+            // Revisit this when ImGui multiline text edit can do word wrapping
+            if constexpr(false)
+            {
+                ImGui::PushItemWidth(-FLT_MIN);
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, 0);
+                auto textSize = ImGui::CalcTextSize(entry.msg->msg.c_str(), nullptr, false, ImGui::GetContentRegionAvail().x);
+                ImGui::InputTextMultiline("##msg",
+                    const_cast<char*>(entry.msg->msg.c_str()),
+                    entry.msg->msg.size(),
+                    textSize,
+                    ImGuiInputTextFlags_ReadOnly
+                );
+                ImGui::PopStyleColor();
+                ImGui::PopStyleVar();
+            }
+            else
+            {
+                ImGui::PushTextWrapPos(0);
+                ImGui::TextUnformatted(entry.msg->msg.c_str());
+                ImGui::PopTextWrapPos();
+            }
+
 
             if(ImGui::IsItemHovered())
                 rowIsHovered = true;
@@ -124,9 +205,8 @@ public:
             ImGui::PopID();
         }
 
-        ImGui::EndTable();
-
         ImGui::PopFont();
+        ImGui::EndTable();
     }
 
 private:
@@ -138,6 +218,9 @@ private:
 
     void append(const rosgraph_msgs::LogConstPtr& msg)
     {
+        if(m_paused)
+            return;
+
         LogEntry entry;
         entry.msg = msg;
         entry.height = ImGui::CalcTextSize(msg->msg.c_str()).y;
@@ -151,6 +234,10 @@ private:
 
     float m_defaultWidthTime = -1.0f;
     float m_defaultWidthNode = -1.0f;
+
+    char m_filterBuf[1024] = {0};
+
+    bool m_paused = false;
 };
 
 }
