@@ -7,6 +7,8 @@
 #include <QTimer>
 #include <QCoreApplication>
 
+#include <filesystem>
+
 #include <imgui_ros/imgui/imgui.h>
 #include <imgui_ros/implot/implot.h>
 
@@ -15,11 +17,14 @@
 #include <imgui_ros/imgui/backends/imgui_impl_opengl3.h>
 
 #include <ros/callback_queue.h>
+#include <ros/package.h>
 
 using namespace imgui_ros;
 
 namespace
 {
+    static const ImWchar g_iconRanges[] = { 0xe000, 0xf3ff, 0 };
+
     ImGuiMouseButton imGuiButton(Qt::MouseButton btn)
     {
         switch(btn)
@@ -150,39 +155,8 @@ void Widget::initializeGL()
 
     ImGui_ImplOpenGL3_Init("#version 130");
 
-    std::string fontFile;
-    {
-        m_fontConfig = FcInitLoadConfigAndFonts();
-
-        // configure the search pattern,
-        // assume "name" is a std::string with the desired font name in it
-        auto fontName = fontInfo().family().toLocal8Bit();
-        FcPattern* pat = FcNameParse((const FcChar8*)(fontName.data()));
-        FcConfigSubstitute(m_fontConfig, pat, FcMatchPattern);
-        FcDefaultSubstitute(pat);
-
-        // find the font
-        FcResult res;
-        FcPattern* font = FcFontMatch(m_fontConfig, pat, &res);
-        if (font)
-        {
-            FcChar8* file = NULL;
-            if (FcPatternGetString(font, FC_FILE, 0, &file) == FcResultMatch)
-            {
-                // save the file to another std::string
-                fontFile = (char*)file;
-            }
-            FcPatternDestroy(font);
-        }
-
-        FcPatternDestroy(pat);
-    }
-
-    if(!fontFile.empty())
-    {
-        m_io->Fonts->AddFontFromFileTTF(fontFile.c_str(), fontMetrics().height(), NULL, NULL);
-        m_defaultFontSize = fontMetrics().height();
-    }
+    m_defaultFontSize = fontMetrics().height();
+    loadFont(fontInfo().family().toLocal8Bit().data());
 
     m_window->setContext(this);
     m_window->initialize();
@@ -281,6 +255,8 @@ void Widget::updateCursor()
 
 ImFont* Widget::loadFont(const std::string& query, float relativeSize)
 {
+    namespace fs = std::filesystem;
+
     int height = std::round(relativeSize * m_defaultFontSize);
     std::string fontPath;
 
@@ -305,7 +281,21 @@ ImFont* Widget::loadFont(const std::string& query, float relativeSize)
     ImFont* font = ImGui::GetFont();
 
     if(!fontPath.empty())
+    {
         font = ImGui::GetIO().Fonts->AddFontFromFileTTF(fontPath.c_str(), height, NULL, NULL);
+
+        // Add symbol font
+        auto symbolPath = fs::path(ros::package::getPath("imgui_ros")) / fs::path("contrib") / fs::path("fonts") / fs::path("fa-solid-900.ttf");
+        if(fs::exists(symbolPath))
+        {
+            ImFontConfig cfg{};
+            cfg.MergeMode = true;
+
+            ImGui::GetIO().Fonts->AddFontFromFileTTF(symbolPath.c_str(), height, &cfg, g_iconRanges);
+        }
+        else
+            fprintf(stderr, "Could not find icons font '%s'\n", symbolPath.c_str());
+    }
 
     return font;
 }
