@@ -57,6 +57,13 @@ namespace
 
         throw std::logic_error{"Invalid ImGuiMouseCursor"};
     }
+
+    ImVec4 imguiColor(const QColor& color)
+    {
+        return ImVec4(
+            color.redF(), color.greenF(), color.blueF(), color.alphaF()
+        );
+    }
 }
 
 namespace rqt_imgui
@@ -147,6 +154,13 @@ void Widget::initializeGL()
     m_io->IniFilename = nullptr;
     ImGui::StyleColorsLight(&ImGui::GetStyle());
     ImGui::GetStyle().Colors[ImGuiCol_WindowBg] = {1.0f, 1.0f, 1.0f, 1.0f};
+
+    auto& colors = ImGui::GetStyle().Colors;
+    QPalette pal = palette();
+    colors[ImGuiCol_WindowBg] = imguiColor(pal.color(QPalette::Window));
+    colors[ImGuiCol_Text] = imguiColor(pal.color(QPalette::Text));
+    colors[ImGuiCol_FrameBg] = imguiColor(pal.color(QPalette::Base));
+    colors[ImGuiCol_Button] = imguiColor(pal.color(QPalette::Button));
 
     m_implot = ImPlot::CreateContext();
     ImPlot::SetCurrentContext(m_implot);
