@@ -48,6 +48,61 @@ bool operator<(const FontSpec& a, const FontSpec& b)
 std::map<FontSpec, ImFont*> g_fontCache;
 float g_fontDefaultHeight = 1.0f;
 FcConfig* g_fontConfig = nullptr;
+static const ImWchar g_iconRanges[] = { 0xe000, 0xf3ff, 0 };
+
+ImFont* loadFont(const std::string& query, float relativeSize = 1.0f)
+{
+    namespace fs = std::filesystem;
+
+    int height = std::round(relativeSize * g_fontDefaultHeight);
+    FontSpec spec{query, height};
+
+    if(auto it = g_fontCache.find(spec); it != g_fontCache.end())
+        return it->second;
+
+    std::string fontPath;
+
+    FcPattern* pat = FcNameParse((const FcChar8*)query.c_str());
+    FcConfigSubstitute(g_fontConfig, pat, FcMatchPattern);
+    FcDefaultSubstitute(pat);
+
+    // find the font
+    FcResult res;
+    FcPattern* match = FcFontMatch(g_fontConfig, pat, &res);
+    if (match)
+    {
+        FcChar8* file = NULL;
+        if (FcPatternGetString(match, FC_FILE, 0, &file) == FcResultMatch)
+            fontPath = (char*)file;
+        FcPatternDestroy(match);
+    }
+
+    FcPatternDestroy(pat);
+
+    // Fallback: current font
+    ImFont* font = ImGui::GetFont();
+
+    if(!fontPath.empty())
+    {
+        font = ImGui::GetIO().Fonts->AddFontFromFileTTF(fontPath.c_str(), height, NULL, NULL);
+
+        // Add symbol font
+        auto symbolPath = fs::path(ros::package::getPath("imgui_ros")) / fs::path("contrib") / fs::path("fonts") / fs::path("fa-solid-900.ttf");
+        if(fs::exists(symbolPath))
+        {
+            ImFontConfig cfg{};
+            cfg.MergeMode = true;
+
+            ImGui::GetIO().Fonts->AddFontFromFileTTF(symbolPath.c_str(), height, &cfg, g_iconRanges);
+        }
+        else
+            fprintf(stderr, "Could not find icons font '%s'\n", symbolPath.c_str());
+    }
+
+    g_fontCache[spec] = font;
+
+    return font;
+}
 
 class Window : public imgui_ros::Context
 {
@@ -72,40 +127,7 @@ public:
 
     ImFont* loadFont(const std::string& query, float relativeSize = 1.0f) override
     {
-        int height = std::round(relativeSize * g_fontDefaultHeight);
-        FontSpec spec{query, height};
-
-        if(auto it = g_fontCache.find(spec); it != g_fontCache.end())
-            return it->second;
-
-        std::string fontPath;
-
-        FcPattern* pat = FcNameParse((const FcChar8*)query.c_str());
-        FcConfigSubstitute(g_fontConfig, pat, FcMatchPattern);
-        FcDefaultSubstitute(pat);
-
-        // find the font
-        FcResult res;
-        FcPattern* match = FcFontMatch(g_fontConfig, pat, &res);
-        if (match)
-        {
-            FcChar8* file = NULL;
-            if (FcPatternGetString(match, FC_FILE, 0, &file) == FcResultMatch)
-                fontPath = (char*)file;
-            FcPatternDestroy(match);
-        }
-
-        FcPatternDestroy(pat);
-
-        // Fallback: current font
-        ImFont* font = ImGui::GetFont();
-
-        if(!fontPath.empty())
-            font = ImGui::GetIO().Fonts->AddFontFromFileTTF(fontPath.c_str(), height, NULL, NULL);
-
-        g_fontCache[spec] = font;
-
-        return font;
+        return ::loadFont(query, relativeSize);
     }
 
     std::string windowTitle = "plugin";
@@ -200,40 +222,14 @@ int main(int argc, char** argv)
         ImGui::LoadIniSettingsFromDisk(imguiConfigPath.c_str());
 
     // Font
-    std::string fontFile;
-    {
-        g_fontConfig = FcInitLoadConfigAndFonts();
+    float scaleX = 1.0f, scaleY = 1.0f;
+    GLFWmonitor* const monitor = glfwGetPrimaryMonitor();
+    glfwGetMonitorContentScale(monitor, &scaleX, &scaleY);
 
-        FcPattern* pat = FcNameParse((const FcChar8*)"Noto Sans");
-        FcConfigSubstitute(g_fontConfig, pat, FcMatchPattern);
-        FcDefaultSubstitute(pat);
+    g_fontDefaultHeight = std::round(scaleX * 16.0f);
 
-        // find the font
-        FcResult res;
-        FcPattern* font = FcFontMatch(g_fontConfig, pat, &res);
-        if (font)
-        {
-            FcChar8* file = NULL;
-            if (FcPatternGetString(font, FC_FILE, 0, &file) == FcResultMatch)
-            {
-                // save the file to another std::string
-                fontFile = (char*)file;
-            }
-            FcPatternDestroy(font);
-        }
-
-        FcPatternDestroy(pat);
-    }
-
-    if(!fontFile.empty())
-    {
-        float scaleX = 1.0f, scaleY = 1.0f;
-        GLFWmonitor* const monitor = glfwGetPrimaryMonitor();
-        glfwGetMonitorContentScale(monitor, &scaleX, &scaleY);
-
-        g_fontDefaultHeight = std::round(scaleX * 16.0f);
-        io.Fonts->AddFontFromFileTTF(fontFile.c_str(), g_fontDefaultHeight, NULL, NULL);
-    }
+    // Default font
+    loadFont("Noto Sans");
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();

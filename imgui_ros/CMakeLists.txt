@@ -91,6 +91,7 @@ install(TARGETS imgui_ros gui
 install(FILES
     include/imgui_ros/box.h
     include/imgui_ros/context.h
+    include/imgui_ros/icons.h
     include/imgui_ros/math.h
     include/imgui_ros/scrolling_buffer.h
     include/imgui_ros/topic_selector.h
@@ -112,4 +113,9 @@ install(FILES
 install(FILES
     contrib/implot/implot.h
     DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}/implot/
+)
+
+install(FILES
+    contrib/fonts/fa-solid-900.ttf
+    DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/contrib/fonts/
 )
