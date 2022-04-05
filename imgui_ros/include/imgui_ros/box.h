@@ -41,6 +41,12 @@ public:
     boost::shared_ptr<const Msg> message() const
     { return m_msg; }
 
+    operator bool() const
+    { return !!m_msg; }
+
+    const Msg* operator->() const
+    { return m_msg.get(); }
+
 private:
     void handleData(const boost::shared_ptr<const Msg>& msg)
     {
