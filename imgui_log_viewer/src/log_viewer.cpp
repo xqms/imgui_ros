@@ -4,6 +4,7 @@
 #include <imgui_ros/window.h>
 
 #include <imgui_ros/imgui/imgui.h>
+#include <imgui_ros/math.h>
 
 #include <pluginlib/class_list_macros.hpp>
 
@@ -42,12 +43,20 @@ public:
 
         ImGui::TableHeadersRow();
 
+        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, 0xff000000);
+
         char timeBuf[256];
         tm timeResult{};
 
-        for(auto& entry : m_entries)
+        for(std::size_t row = 0; row < m_entries.size(); ++row)
         {
+            const auto& entry = m_entries[row];
+
+            bool rowIsHovered = false;
+
             ImGui::TableNextRow();
+
+            ImGui::PushID(row);
 
             ImGui::TableNextColumn();
 
@@ -57,13 +66,62 @@ public:
 
             std::strftime(timeBuf, sizeof(timeBuf), "%R", &timeResult);
 
+            std::uint32_t color = [&](){
+                switch(entry.msg->level)
+                {
+                    case rosgraph_msgs::Log::DEBUG: return 0xff9cbc1a;
+                    case rosgraph_msgs::Log::INFO:  return 0xffffffff;
+                    case rosgraph_msgs::Log::WARN:  return 0xff0074f6;
+                    case rosgraph_msgs::Log::ERROR: return 0xff1515ed;
+                    case rosgraph_msgs::Log::FATAL: return 0xff1515ed;
+                    default: return 0xffb6599b;
+                }
+            }();
+
+            ImGui::PushStyleColor(ImGuiCol_Text, color);
+
             ImGui::Text("%s.%02llu", timeBuf, stamp.nsec / 10000000ULL);
+            if(ImGui::IsItemHovered())
+                rowIsHovered = true;
 
             ImGui::TableNextColumn();
             ImGui::TextUnformatted(entry.msg->name.c_str());
 
+            if(ImGui::IsItemHovered())
+                rowIsHovered = true;
+
             ImGui::TableNextColumn();
             ImGui::TextUnformatted(entry.msg->msg.c_str());
+
+            if(ImGui::IsItemHovered())
+                rowIsHovered = true;
+
+            ImGui::PopStyleColor();
+
+            if(ImGui::IsMouseReleased(ImGuiMouseButton_Right) && rowIsHovered)
+                ImGui::OpenPopup("context");
+
+            if(ImGui::BeginPopup("context"))
+            {
+                char cmdBuf[1024];
+
+                if(ImGui::Selectable("Open in Kate"))
+                {
+                    snprintf(cmdBuf, sizeof(cmdBuf), "kate '%s:%d' &", entry.msg->file.c_str(), entry.msg->line);
+                    if(system(cmdBuf))
+                        ;
+                }
+                else if(ImGui::Selectable("Open in KDevelop"))
+                {
+                    snprintf(cmdBuf, sizeof(cmdBuf), "kdevelop '%s:%d' &", entry.msg->file.c_str(), entry.msg->line);
+                    if(system(cmdBuf))
+                        ;
+                }
+
+                ImGui::EndPopup();
+            }
+
+            ImGui::PopID();
         }
 
         ImGui::EndTable();

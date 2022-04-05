@@ -91,6 +91,7 @@ install(TARGETS imgui_ros gui
 install(FILES
     include/imgui_ros/box.h
     include/imgui_ros/context.h
+    include/imgui_ros/math.h
     include/imgui_ros/scrolling_buffer.h
     include/imgui_ros/topic_selector.h
     include/imgui_ros/window.h
