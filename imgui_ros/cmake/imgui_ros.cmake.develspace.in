@@ -1,5 +1,5 @@
 
-set(imgui_ros_INCLUDE_DIRS
+list(APPEND imgui_ros_INCLUDE_DIRS
     "@CMAKE_CURRENT_SOURCE_DIR@/include"
     "@CATKIN_DEVEL_PREFIX@/include"
 )
