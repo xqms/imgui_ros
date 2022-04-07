@@ -1,0 +1,16 @@
+<package format="3">
+    <name>imgui_image_view</name>
+    <version>0.0.1</version>
+    <description>High-performance image view plugin for imgui_ros</description>
+    <license>MIT</license>
+    <maintainer email="max.schwarz@ais.uni-bonn.de">Max Schwarz</maintainer>
+
+    <buildtool_depend>catkin</buildtool_depend>
+    <depend>imgui_ros</depend>
+    <depend>ffmpeg</depend>
+    <depend>rosfmt</depend>
+
+    <export>
+        <imgui_ros plugin="${prefix}/imgui_plugin.xml" />
+    </export>
+</package>

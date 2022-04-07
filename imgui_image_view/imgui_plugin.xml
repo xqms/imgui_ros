@@ -1,0 +1,14 @@
+<library path="lib/libimgui_image_view">
+    <class name="imgui_image_view/ImageView" type="imgui_image_view::ImageView" base_class_type="imgui_ros::Window">
+        <description>
+            Image View
+        </description>
+        <qtgui>
+            <label>IMGUI Image View</label>
+            <statustip>Image Viewer</statustip>
+            <group>
+                <label>Visualization</label>
+            </group>
+        </qtgui>
+    </class>
+</library>
