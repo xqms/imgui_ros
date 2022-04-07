@@ -23,17 +23,28 @@ bool TopicSelector::draw(const char* label, std::string* selectedTopic, std::str
 {
     bool topicChanged = false;
 
+    bool showType = m_types.size() != 1;
+
     if(ImGui::BeginCombo(label, selectedTopic->c_str()))
     {
         // If the combo box has just been opened, update the list of topics
         if(ImGui::IsWindowAppearing())
             updateTopics();
 
-        // Combo box entries
+        ImGui::BeginTable("topics", showType ? 2 : 1, ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_SizingStretchProp);
+        ImGui::TableSetupColumn("topic", ImGuiTableColumnFlags_WidthStretch);
+
+        if(showType)
+            ImGui::TableSetupColumn("type", ImGuiTableColumnFlags_WidthStretch);
+
         for(auto& t : m_topics)
         {
             bool selected = (t.topic == *selectedTopic);
-            if(ImGui::Selectable(t.topic.c_str(), selected))
+
+            ImGui::TableNextRow();
+
+            ImGui::TableNextColumn();
+            if(ImGui::Selectable(t.topic.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns))
             {
                 *selectedTopic = t.topic;
                 if(selectedType)
@@ -42,7 +53,15 @@ bool TopicSelector::draw(const char* label, std::string* selectedTopic, std::str
             }
             if(selected)
                 ImGui::SetItemDefaultFocus();
+
+            if(showType)
+            {
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(t.type.c_str());
+            }
         }
+
+        ImGui::EndTable();
 
         ImGui::EndCombo();
     }
