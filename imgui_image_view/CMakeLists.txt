@@ -18,8 +18,7 @@ find_package(PkgConfig)
 pkg_check_modules(avcodec IMPORTED_TARGET libavcodec)
 pkg_check_modules(avformat IMPORTED_TARGET libavformat)
 pkg_check_modules(avutil IMPORTED_TARGET libavutil)
-
-find_package(CUDAToolkit)
+pkg_check_modules(swscale IMPORTED_TARGET libswscale)
 
 set(OpenGL_GL_PREFERENCE GLVND)
 find_package(OpenGL)
@@ -35,10 +34,7 @@ target_link_libraries(imgui_image_view
     PkgConfig::avcodec
     PkgConfig::avformat
     PkgConfig::avutil
-    CUDA::cudart
-    CUDA::cuda_driver
-    CUDA::nppicc
-    CUDA::nppidei
+    PkgConfig::swscale
     OpenGL::GL
     OpenGL::GLX
     ${X11_LIBRARIES}

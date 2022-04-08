@@ -86,12 +86,9 @@ private:
         m_sub.shutdown();
         m_frame = {};
 
-        fprintf(stderr, "Subscriber to %s/%s\n", m_topic.c_str(), m_type.c_str());
-
         if(m_topic.empty() || m_type.empty())
             return;
 
-        fprintf(stderr, "Subscriber to %s\n", m_topic.c_str());
         m_decoder.flush();
 
         if(m_type == "sensor_msgs/Image")
