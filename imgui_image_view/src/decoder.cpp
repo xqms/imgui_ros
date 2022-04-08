@@ -18,6 +18,7 @@ extern "C"
 {
 #include <libavcodec/avcodec.h>
 #include <libavutil/hwcontext_cuda.h>
+#include <libavutil/pixdesc.h>
 }
 
 #include <nppi_color_conversion.h>
@@ -34,6 +35,12 @@ extern "C"
 
 namespace
 {
+    std::string safePixelFormatName(AVPixelFormat fmt)
+    {
+        auto name = av_get_pix_fmt_name(fmt);
+        return name ? name : std::to_string(fmt);
+    }
+
     class Task
     {
     public:
@@ -51,7 +58,7 @@ namespace
         {
         }
 
-        CUDATexture(int w, int h, cudaStream_t stream)
+        CUDATexture(int w, int h, std::optional<cudaStream_t> stream)
          : m_stream{stream}
         {
             glCreateTextures(GL_TEXTURE_2D, 1, &m_texture);
@@ -68,10 +75,13 @@ namespace
 
             glTextureStorage2D(m_texture, 1, GL_RGBA8, w, h);
 
-            if(auto err = cudaGraphicsGLRegisterImage(&m_resource, m_texture, GL_TEXTURE_2D, cudaGraphicsRegisterFlagsWriteDiscard))
+            if(stream)
             {
-                fprintf(stderr, "Could not register GL texture with CUDA: %s (%d)\n", cudaGetErrorString(err), err);
-                std::abort();
+                if(auto err = cudaGraphicsGLRegisterImage(&m_resource, m_texture, GL_TEXTURE_2D, cudaGraphicsRegisterFlagsWriteDiscard))
+                {
+                    fprintf(stderr, "Could not register GL texture with CUDA: %s (%d)\n", cudaGetErrorString(err), err);
+                    std::abort();
+                }
             }
         }
 
@@ -118,7 +128,7 @@ namespace
         {
             assert(!m_mapped);
 
-            if(auto err = cudaGraphicsMapResources(1, &m_resource, m_stream))
+            if(auto err = cudaGraphicsMapResources(1, &m_resource, *m_stream))
             {
                 fprintf(stderr, "Could not map GL buffer to CUDA: %s (%d)\n", cudaGetErrorString(err), err);
                 std::abort();
@@ -144,7 +154,7 @@ namespace
         {
             assert(m_mapped);
 
-            if(auto err = cudaGraphicsUnmapResources(1, &m_resource, m_stream))
+            if(auto err = cudaGraphicsUnmapResources(1, &m_resource, *m_stream))
             {
                 fprintf(stderr, "Could not unmap GL buffer from CUDA: %s (%d)\n", cudaGetErrorString(err), err);
                 std::abort();
@@ -160,7 +170,7 @@ namespace
         { return m_texture; }
 
     private:
-        cudaStream_t m_stream{};
+        std::optional<cudaStream_t> m_stream{};
         GLuint m_texture = static_cast<GLuint>(-1);
         cudaGraphicsResource_t m_resource{};
         cudaArray_t m_levelArray{};
@@ -177,13 +187,10 @@ public:
     OutputFrameData(Decoder::Private* priv)
      : decoder{priv}
     {
-        fprintf(stderr, "OutputFrameData constructor\n");
     }
 
     ~OutputFrameData()
     {
-        fprintf(stderr, "OutputFrameData destructor\n");
-
         glDeleteSync(fence);
 
         if(devBuffer)
@@ -192,9 +199,10 @@ public:
             cudaFree(&devBuffer2);
     }
 
-    void prepare(int requestedWidth, int requestedHeight, cudaStream_t stream);
+    void prepare(int requestedWidth, int requestedHeight, const std::optional<cudaStream_t>& stream);
 
     Decoder::Private* decoder;
+
     CUDATexture texture;
     int width = 0;
     int height = 0;
@@ -224,7 +232,7 @@ public:
 private:
     bool initializeDecoder(const std::string& encoding, int width = -1, int height = -1);
     void decodePacket(AVPacket* packet);
-    void pushFrame(AVFrame* frame, AVPixelFormat swFormat);
+    void pushCUDAFrame(AVFrame* frame, AVColorRange colorRange = AVCOL_RANGE_UNSPECIFIED);
 
     std::string m_name;
 
@@ -238,7 +246,7 @@ private:
     std::mutex m_freeOutMutex;
     std::condition_variable m_freeOutCond;
 
-    int m_cudaDevice = 0;
+    int m_cudaDevice = -1;
 
     Display* m_display = {};
     GLXPbuffer m_pbuffer = {};
@@ -256,7 +264,7 @@ private:
 };
 
 
-void Decoder::OutputFrameData::prepare(int requestedWidth, int requestedHeight, cudaStream_t stream)
+void Decoder::OutputFrameData::prepare(int requestedWidth, int requestedHeight, const std::optional<cudaStream_t>& stream)
 {
     if(fence)
     {
@@ -271,10 +279,15 @@ void Decoder::OutputFrameData::prepare(int requestedWidth, int requestedHeight, 
         cudaFree(&devBuffer);
 
     texture = CUDATexture{requestedWidth, requestedHeight, stream};
-    if(cudaMalloc(&devBuffer, 4*requestedWidth*requestedHeight))
-        throw std::runtime_error{"Out of GPU memory."};
-    if(cudaMalloc(&devBuffer2, 4*requestedWidth*requestedHeight))
-        throw std::runtime_error{"Out of GPU memory."};
+
+    if(stream)
+    {
+        if(cudaMalloc(&devBuffer, 4*requestedWidth*requestedHeight))
+            throw std::runtime_error{"Out of GPU memory."};
+        if(cudaMalloc(&devBuffer2, 4*requestedWidth*requestedHeight))
+            throw std::runtime_error{"Out of GPU memory."};
+    }
+
     width = requestedWidth;
     height = requestedHeight;
 }
@@ -283,27 +296,30 @@ void Decoder::OutputFrameData::prepare(int requestedWidth, int requestedHeight, 
 Decoder::Private::Private(const std::string& name, GLXContext glxContext)
  : m_name{name}
 {
+    [&](){
+        unsigned int numDevices = 0;
+        std::array<int, 10> devices;
+        if(auto err = cudaGLGetDevices(&numDevices, devices.data(), devices.size(), cudaGLDeviceListAll))
+        {
+            ROSFMT_INFO("Could not list CUDA devices: %s (%d). Falling back to software decoding.\n", cudaGetErrorString(err), err);
+            return;
+        }
+
+        if(numDevices == 0)
+        {
+            ROSFMT_INFO("No CUDA device matching your GLX context found. Falling back to software decoding.\n");
+            return;
+        }
+
+        m_cudaDevice = devices[0];
+        cudaSetDevice(m_cudaDevice);
+    }();
+
     // Create output buffers
     for(unsigned int i = 0; i < 5; ++i)
     {
         m_freeOutFrames.push_back(std::make_unique<OutputFrameData>(this));
     }
-
-    unsigned int numDevices = 0;
-    std::array<int, 10> devices;
-    if(auto err = cudaGLGetDevices(&numDevices, devices.data(), devices.size(), cudaGLDeviceListAll))
-    {
-        fprintf(stderr, "Could not list CUDA devices: %s (%d)\n", cudaGetErrorString(err), err);
-        std::exit(1);
-    }
-
-    if(numDevices == 0)
-    {
-        fprintf(stderr, "No CUDA devices matching your OpenGL context!\n");
-        std::exit(1);
-    }
-
-    m_cudaDevice = devices[0];
 
     m_display = XOpenDisplay(nullptr);
 
@@ -370,6 +386,9 @@ Decoder::Private::~Private()
 
 bool Decoder::Private::initializeDecoder(const std::string& encoding, int width, int height)
 {
+    if(m_codecCtx)
+        return true;
+
     glXMakeContextCurrent(m_display, m_pbuffer, m_pbuffer, m_context);
 
     if(!m_stream)
@@ -493,12 +512,17 @@ bool Decoder::Private::initializeDecoder(const std::string& encoding, int width,
     if(avcodec_open2(m_codecCtx, codec, nullptr) < 0)
         throw std::runtime_error{"Could not open codec"};
 
+    ROSFMT_INFO("Initialized codec with settings: pix_fmt={}, sw_pix_fmt={}, color_range={}",
+        safePixelFormatName(m_codecCtx->pix_fmt),
+        safePixelFormatName(m_codecCtx->sw_pix_fmt),
+        m_codecCtx->color_range
+    );
+
     return true;
 }
 
 void Decoder::Private::decodePacket(AVPacket* packet)
 {
-    ROSFMT_INFO("decodePacket");
     if(avcodec_send_packet(m_codecCtx, packet) < 0)
     {
         ROSFMT_WARN_NAMED("decoder", "Could not send packet to decoder");
@@ -511,7 +535,6 @@ void Decoder::Private::decodePacket(AVPacket* packet)
     while(ret >= 0)
     {
         ret = avcodec_receive_frame(m_codecCtx, frame);
-        ROSFMT_INFO("receive frame: {}", ret);
         if(ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
             return;
         else if(ret < 0)
@@ -520,36 +543,17 @@ void Decoder::Private::decodePacket(AVPacket* packet)
             return;
         }
 
-        pushFrame(frame, m_codecCtx->sw_pix_fmt);
-//         frameStamp = ros::Time{}.fromNSec(frame->pts);
+        if(frame->format == AV_PIX_FMT_CUDA)
+            pushCUDAFrame(frame, m_codecCtx->color_range);
     }
 
     av_frame_free(&frame);
 }
 
-void Decoder::Private::pushFrame(AVFrame* frame, AVPixelFormat swFormat)
+void Decoder::Private::pushCUDAFrame(AVFrame* frame, AVColorRange colorRange)
 {
     int dataWidth = frame->width;
     int dataHeight = frame->height;
-    ROSFMT_INFO("pushFrame: width={}, height={}, swFormat={}", dataWidth, dataHeight, swFormat);
-
-    AVFrame* hwFrame = {};
-    if(frame->format != AV_PIX_FMT_CUDA)
-    {
-        // Copy to GPU
-        hwFrame = av_frame_alloc();
-        hwFrame->format = AV_PIX_FMT_CUDA;
-        hwFrame->width = frame->width;
-        hwFrame->height = frame->height;
-
-        if(av_frame_get_buffer(hwFrame, 0) < 0)
-            throw std::runtime_error{"Could not allocate hw frame"};
-
-        if(av_hwframe_transfer_data(hwFrame, frame, 0) != 0)
-            throw std::runtime_error{"Could not transfer frame to GPU"};
-
-        frame = hwFrame;
-    }
 
     // Obtain a texture we can copy to
     // NOTE: We cannot get rid of this copy, since it changes the
@@ -575,7 +579,7 @@ void Decoder::Private::pushFrame(AVFrame* frame, AVPixelFormat swFormat)
     frameData->prepare(dataWidth, dataHeight, m_stream);
     frameData->texture.map();
 
-    if(swFormat == AV_PIX_FMT_NV12 || swFormat == AV_PIX_FMT_YUVJ420P)
+    if(frame->format == AV_PIX_FMT_CUDA && (colorRange == AVCOL_RANGE_UNSPECIFIED || colorRange == AVCOL_RANGE_MPEG))
     {
         const uint8_t* pSrc[2] = {
             frame->data[0],
@@ -609,38 +613,14 @@ void Decoder::Private::pushFrame(AVFrame* frame, AVPixelFormat swFormat)
             ROSFMT_ERROR("Could not transfer to texture: {}", err);
         }
     }
-    else if(swFormat == AV_PIX_FMT_BGR24)
-    {
-        NppiSize roi{dataWidth, dataHeight};
-
-        const int dstOrder[4] = {2, 1, 0, 3};
-
-        if(auto err = nppiSwapChannels_8u_C3C4R_Ctx(
-                frame->data[0], frame->linesize[0],
-                frameData->devBuffer, 4*frame->width,
-                roi, dstOrder, 0xff,
-                m_nppCtx
-            ))
-        {
-            ROSFMT_ERROR("Could not convert BGR to RGBA: {}", err);
-        }
-
-        if(auto err = cudaMemcpy2DToArrayAsync(
-            frameData->texture.deviceArray(), 0, 0,
-            frameData->devBuffer, dataWidth*4, dataWidth*4, dataHeight,
-            cudaMemcpyDeviceToDevice, m_stream))
-        {
-            ROSFMT_ERROR("Could not transfer to texture: {}", err);
-        }
-    }
-    else if(swFormat == AV_PIX_FMT_YUVJ420P)
+    else if(frame->format == AV_PIX_FMT_CUDA && colorRange == AVCOL_RANGE_JPEG)
     {
         NppiSize roi{dataWidth, dataHeight};
 
         uint8_t* planes[3] = {
             frameData->devBuffer,
             frameData->devBuffer + dataWidth*dataHeight,
-            frameData->devBuffer + dataWidth*dataHeight,
+            frameData->devBuffer + 2*dataWidth*dataHeight,
         };
         int dstStep[3] = {
             dataWidth, dataWidth, dataWidth
@@ -649,7 +629,6 @@ void Decoder::Private::pushFrame(AVFrame* frame, AVPixelFormat swFormat)
         if(auto err = nppiYCbCr420_8u_P2P3R_Ctx(frame->data[0], frame->linesize[0], frame->data[1], frame->linesize[1], planes, dstStep, roi, m_nppCtx))
             ROSFMT_ERROR("Could not convert JPEG NV12 to YUV420: {}", err);
 
-        ROSFMT_ERROR("frame: data {} {} {}, linesize {} {} {}", (void*)frame->data[0], (void*)frame->data[1], (void*)frame->data[2], frame->linesize[0], frame->linesize[1], frame->linesize[2]);
         if(auto err = nppiYCbCr420ToRGB_8u_P3C3R_Ctx(planes, dstStep, frameData->devBuffer2, dataWidth * 3, roi, m_nppCtx))
         {
             ROSFMT_ERROR("Could not convert JPEG YUV420 to RGB: {}", err);
@@ -675,9 +654,33 @@ void Decoder::Private::pushFrame(AVFrame* frame, AVPixelFormat swFormat)
             ROSFMT_ERROR("Could not transfer to texture: {}", err);
         }
     }
+    else if(frame->format == AV_PIX_FMT_BGR24)
+    {
+        NppiSize roi{dataWidth, dataHeight};
+
+        const int dstOrder[4] = {2, 1, 0, 3};
+
+        if(auto err = nppiSwapChannels_8u_C3C4R_Ctx(
+                frame->data[0], frame->linesize[0],
+                frameData->devBuffer, 4*frame->width,
+                roi, dstOrder, 0xff,
+                m_nppCtx
+            ))
+        {
+            ROSFMT_ERROR("Could not convert BGR to RGBA: {}", err);
+        }
+
+        if(auto err = cudaMemcpy2DToArrayAsync(
+            frameData->texture.deviceArray(), 0, 0,
+            frameData->devBuffer, dataWidth*4, dataWidth*4, dataHeight,
+            cudaMemcpyDeviceToDevice, m_stream))
+        {
+            ROSFMT_ERROR("Could not transfer to texture: {}", err);
+        }
+    }
     else
     {
-        ROSFMT_ERROR("Unsupported pixel format: {}", swFormat);
+        ROSFMT_ERROR("Unsupported pixel format: {}", safePixelFormatName(static_cast<AVPixelFormat>(frame->format)));
     }
 
     frameData->texture.unmap();
@@ -694,9 +697,6 @@ void Decoder::Private::pushFrame(AVFrame* frame, AVPixelFormat swFormat)
         m_outputQueue.push_back(std::move(out));
         m_jobOutCond.notify_one();
     }
-
-    if(hwFrame)
-        av_frame_free(&hwFrame);
 }
 
 void Decoder::Private::returnBuffer(std::unique_ptr<Decoder::OutputFrameData>&& buffer)
@@ -710,17 +710,11 @@ void Decoder::Private::returnBuffer(std::unique_ptr<Decoder::OutputFrameData>&& 
 
 bool Decoder::Private::addMessage(const sensor_msgs::CompressedImageConstPtr& msg)
 {
-    ROSFMT_INFO("addMessage (compressed)");
     if(!initializeDecoder(msg->format))
         return false;
 
     const uint8_t* dataPtr = msg->data.data();
     std::size_t remaining = msg->data.size();
-
-    {
-        std::ofstream out("/tmp/jpeg_frame");
-        out.write(reinterpret_cast<const char*>(msg->data.data()), msg->data.size());
-    }
 
     AVPacket* packet = av_packet_alloc();
 
@@ -730,7 +724,6 @@ bool Decoder::Private::addMessage(const sensor_msgs::CompressedImageConstPtr& ms
             m_parserCtx, m_codecCtx, &packet->data, &packet->size,
             dataPtr, remaining, AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0
         );
-        ROSFMT_INFO("parse: {}", ret);
 
         if(ret < 0)
         {
@@ -755,13 +748,13 @@ bool Decoder::Private::addMessage(const sensor_msgs::ImageConstPtr& msg)
     if(!initializeDecoder({}, msg->width, msg->height))
         return false;
 
-    AVPixelFormat swFormat = {};
+    AVPixelFormat format = {};
     if(msg->encoding == "rgb8")
-        swFormat = AV_PIX_FMT_RGB24;
+        format = AV_PIX_FMT_RGB24;
     else if(msg->encoding == "bgr8")
-        swFormat = AV_PIX_FMT_BGR24;
+        format = AV_PIX_FMT_BGR24;
     else if(msg->encoding == "mono8")
-        swFormat = AV_PIX_FMT_GRAY8;
+        format = AV_PIX_FMT_GRAY8;
     else
     {
         ROSFMT_WARN_THROTTLE(1.0, "Received image with unsupported encoding '{}', ignoring", msg->encoding);
@@ -781,9 +774,9 @@ bool Decoder::Private::addMessage(const sensor_msgs::ImageConstPtr& msg)
     frame->width = msg->width;
     frame->height = msg->height;
     frame->linesize[0] = msg->step;
-    frame->format = AV_PIX_FMT_CUDA;
+    frame->format = format;
 
-    pushFrame(frame, swFormat);
+    pushCUDAFrame(frame);
 
     cudaFree(&frame->data[0]);
     av_frame_free(&frame);
