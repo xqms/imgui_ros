@@ -2,4 +2,6 @@
 list(APPEND imgui_ros_INCLUDE_DIRS
     "@CMAKE_CURRENT_SOURCE_DIR@/include"
     "@CATKIN_DEVEL_PREFIX@/include"
+    "@CATKIN_DEVEL_PREFIX@/include/imgui_ros/imgui"
+    "@CATKIN_DEVEL_PREFIX@/include/imgui_ros/implot"
 )
