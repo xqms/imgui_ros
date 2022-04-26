@@ -37,6 +37,8 @@ public:
     void initialize() override
     {
         m_font = context()->loadFont("Monospace", 0.9f);
+        if(!m_font)
+            throw std::runtime_error{"Could not load monospace font"};
 
         m_sub = context()->nodeHandle().subscribe("/rosout_agg", 20, &LogViewer::append, this);
     }
