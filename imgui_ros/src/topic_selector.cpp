@@ -80,6 +80,7 @@ void TopicSelector::updateTopics()
         if(m_types.count(topic.datatype) != 0)
             m_topics.push_back({topic.name, topic.datatype});
     }
+    std::sort(m_topics.begin(), m_topics.end());
 }
 
 

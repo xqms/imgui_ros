@@ -29,6 +29,11 @@ private:
     {
         std::string topic;
         std::string type;
+
+        bool operator<(const TopicInfo& other) const
+        {
+            return topic < other.topic;
+        }
     };
 
     std::vector<TopicInfo> m_topics;
