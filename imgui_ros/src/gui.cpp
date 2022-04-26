@@ -376,6 +376,10 @@ int main(int argc, char** argv)
 
         ImGui::DockSpaceOverViewport();
 
+        // We cannot initialize a new plugin between ImGui::NewFrame / EndFrame, since it may load fonts and otherwise alter ImGui context.
+        // Instead, keep the pointer here and initialize it after the EndFrame().
+        std::unique_ptr<Window> newWindow = {};
+
         if(ImGui::BeginMainMenuBar())
         {
             bool pluginError = false;
@@ -402,9 +406,7 @@ int main(int argc, char** argv)
                             else
                             {
                                 w->plugin->setContext(w.get());
-                                w->plugin->initialize();
-                                windows.push_back(std::move(w));
-                                windowListDirty = true;
+                                newWindow = std::move(w);
                             }
                         }
                         catch(pluginlib::PluginlibException& e)
@@ -589,6 +591,17 @@ int main(int argc, char** argv)
         glClearColor(0, 0, 0, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+        // Initialize new plugin
+        if(newWindow)
+        {
+            newWindow->plugin->initialize();
+            windows.push_back(std::move(newWindow));
+            windowListDirty = true;
+
+            // Update fonts atlas
+            ImGui_ImplOpenGL3_CreateFontsTexture();
+        }
 
         glfwSwapBuffers(window);
     }
