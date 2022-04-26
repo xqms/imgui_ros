@@ -38,7 +38,7 @@ public:
         if(m_topicSelector.draw("##Topic", &m_topic, &m_type))
             subscribe();
 
-        ros::SteadyTime deadline = ros::SteadyTime::now() + ros::WallDuration{0.05};
+        ros::SteadyTime deadline = ros::SteadyTime::now() + ros::WallDuration{0.001};
 
         // Fetch all ready frames from decoder
         while(auto newFrame = m_decoder.getNewFrame(deadline))
