@@ -30,7 +30,11 @@ public:
 class Window
 {
 public:
+    Window() = default;
     virtual ~Window();
+
+    Window(const Window&) = delete;
+    Window& operator=(const Window&) = delete;
 
     void setContext(Context* context);
     inline Context* context()
