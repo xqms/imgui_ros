@@ -293,6 +293,10 @@ bool Decoder::Private::initializeDecoder(const std::string& encoding, int width,
         codecID = AV_CODEC_ID_H265;
     else if(strcasecmp(encoding.c_str(), "bgr8; jpeg compressed bgr8") == 0)
         codecID = AV_CODEC_ID_MJPEG;
+    else if(strcasecmp(encoding.c_str(), "rgb8; jpeg compressed bgr8") == 0)
+        codecID = AV_CODEC_ID_MJPEG;
+    else if(strcasecmp(encoding.c_str(), "jpeg") == 0)
+        codecID = AV_CODEC_ID_MJPEG;
     else
     {
         fprintf(stderr, "Unsupported encoding: '%s'\n", encoding.c_str());
@@ -408,6 +412,8 @@ void Decoder::Private::pushFrame(AVFrame* frame, AVColorSpace colorSpace, AVColo
         // variant AV_PIX_FMT_YUV420P to avoid a warning
         if(frame->format == AV_PIX_FMT_YUVJ420P)
             frame->format = AV_PIX_FMT_YUV420P;
+        else if(frame->format == AV_PIX_FMT_YUVJ422P)
+            frame->format = AV_PIX_FMT_YUV422P;
 
         // Use sws to convert to target pixfmt
         if(m_swsContext && (m_swsFormat != frame->format || m_swsWidth != dataWidth || m_swsHeight != dataHeight))
@@ -471,6 +477,7 @@ void Decoder::Private::pushFrame(AVFrame* frame, AVColorSpace colorSpace, AVColo
         frame = targetFrame;
     }
 
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, frame->linesize[0]/4);
     glTextureSubImage2D(
         frameData->texture.texture(),
         0, // level
@@ -479,6 +486,7 @@ void Decoder::Private::pushFrame(AVFrame* frame, AVColorSpace colorSpace, AVColo
         GL_RGBA, GL_UNSIGNED_BYTE,
         frame->data[0]
     );
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 
     // Provide sync fence
     frameData->fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
