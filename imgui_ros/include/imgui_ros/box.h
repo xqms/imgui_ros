@@ -34,7 +34,12 @@ public:
         m_nh = other.m_nh;
         m_topic = other.m_topic;
         m_hints = other.m_hints;
-        m_sub = m_nh.subscribe(m_topic, 1, &Box<Msg>::handleData, this, m_hints);
+
+        if(!m_topic.empty())
+            m_sub = m_nh.subscribe(m_topic, 1, &Box<Msg>::handleData, this, m_hints);
+        else
+            m_sub = {};
+
         return *this;
     }
 
