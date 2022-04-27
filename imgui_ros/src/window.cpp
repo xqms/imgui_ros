@@ -24,4 +24,8 @@ Settings Window::getState() const
     return {};
 }
 
+void Window::resize(int, int)
+{
+}
+
 }

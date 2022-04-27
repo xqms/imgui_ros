@@ -41,7 +41,7 @@ public:
     { return m_context; }
 
     virtual void initialize() {}
-    virtual void resize(int w, int h) {}
+    virtual void resize(int w, int h);
     virtual void paint() = 0;
 
     virtual void setState(const Settings& settings);
