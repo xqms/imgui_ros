@@ -349,6 +349,12 @@ int main(int argc, char** argv)
         }
     }
 
+    // Run an empty frame to make sure everything is set up before we call ROS cbs
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+    ImGui::EndFrame();
+
     char renameWindowBuf[1024];
 
     while(ros::ok())
