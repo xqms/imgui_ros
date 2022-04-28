@@ -535,6 +535,9 @@ int main(int argc, char** argv)
             bool open = true;
             if(ImGui::BeginPopupModal("Close", &open, ImGuiWindowFlags_AlwaysAutoResize))
             {
+                if(ImGui::IsWindowAppearing())
+                    glfwRequestWindowAttention(window);
+
                 ImGui::TextUnformatted("Save perspective?");
 
                 if(ImGui::Button("Yes", ImVec2(80, 0)))
