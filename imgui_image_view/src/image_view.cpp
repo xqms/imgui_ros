@@ -29,6 +29,7 @@ public:
 
     ~ImageView()
     {
+        m_decoder.shutdown();
         m_spinner.stop();
     }
 

@@ -143,6 +143,8 @@ public:
 
     void flush();
 
+    void shutdown();
+
 private:
     bool initializeDecoder(const std::string& encoding, int width = -1, int height = -1);
     void decodePacket(AVPacket* packet);
@@ -592,6 +594,15 @@ void Decoder::Private::flush()
     m_outputQueue.clear();
 }
 
+void Decoder::Private::shutdown()
+{
+    {
+        std::unique_lock<std::mutex> lock{m_freeOutMutex};
+        m_shutdown = true;
+    }
+    m_freeOutCond.notify_all();
+}
+
 std::optional<Decoder::OutputFrame> Decoder::Private::getNewFrame(const ros::SteadyTime& deadline)
 {
     std::unique_lock<std::mutex> lock(m_jobMutex);
@@ -722,6 +733,11 @@ std::optional<Decoder::OutputFrame> Decoder::getNewFrame(const ros::SteadyTime& 
 void Decoder::flush()
 {
     m_d->flush();
+}
+
+void Decoder::shutdown()
+{
+    m_d->shutdown();
 }
 
 }

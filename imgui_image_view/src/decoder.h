@@ -65,6 +65,8 @@ public:
 
     void flush();
 
+    void shutdown();
+
 private:
     class Private;
 
