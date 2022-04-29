@@ -101,6 +101,8 @@ install(FILES
 
 install(FILES
     contrib/imgui/imgui.h
+    contrib/imgui/imgui_internal.h
+    contrib/imgui/imstb_textedit.h
     contrib/imgui/imconfig.h
     DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}/imgui/
 )

@@ -357,6 +357,8 @@ int main(int argc, char** argv)
 
     char renameWindowBuf[1024];
 
+    bool showDemoWindow = false;
+
     while(ros::ok())
     {
         // Poll and handle events (inputs, window resize, etc.)
@@ -442,6 +444,14 @@ int main(int argc, char** argv)
                 ImGui::EndMenu();
             }
 
+            if(ImGui::BeginMenu("Tools"))
+            {
+                if(ImGui::Selectable("imgui demo"))
+                    showDemoWindow = true;
+
+                ImGui::EndMenu();
+            }
+
             ImGui::EndMainMenuBar();
 
             // Plugin error modal
@@ -460,6 +470,9 @@ int main(int argc, char** argv)
                 ImGui::EndPopup();
             }
         }
+
+        if(showDemoWindow)
+            ImGui::ShowDemoWindow();
 
         char buf[1024];
         for(auto it = windows.begin(); it != windows.end(); )

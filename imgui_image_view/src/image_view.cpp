@@ -4,6 +4,7 @@
 #include <imgui_ros/window.h>
 #include <imgui_ros/topic_selector.h>
 #include <imgui_ros/imgui/imgui.h>
+#include <imgui_ros/imgui/imgui_internal.h>
 
 #include <pluginlib/class_list_macros.hpp>
 
@@ -36,9 +37,12 @@ public:
 
     void paint() override
     {
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        if(m_topicSelector.draw("##Topic", &m_topic, &m_type))
-            subscribe();
+        if(!m_hideTopicSelector)
+        {
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if(m_topicSelector.draw("##Topic", &m_topic, &m_type))
+                subscribe();
+        }
 
         ros::SteadyTime deadline = ros::SteadyTime::now() + ros::WallDuration{0.001};
 
@@ -46,19 +50,31 @@ public:
         while(auto newFrame = m_decoder.getNewFrame(deadline))
             m_frame = std::move(newFrame);
 
-        if(m_frame)
+        if(!m_frame)
+            return;
+
+        float w = m_frame->width();
+        float h = m_frame->height();
+
+        auto avail = ImGui::GetContentRegionAvail();
+        float scale = std::min(avail.x / w, avail.y / h);
+
+        ImGui::SetCursorPos({
+            ImGui::GetCursorPosX() + (avail.x - scale*w)/2,
+            ImGui::GetCursorPosY() + (avail.y - scale*h)/2
+        });
+        auto id = ImGui::GetID("image");
+        ImGui::ImageButtonEx(
+            id, reinterpret_cast<void*>(m_frame->texture()), {scale*w, scale*h},
+            {0.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f}
+        );
+
+        if(ImGui::BeginPopupContextItem())
         {
-            float w = m_frame->width();
-            float h = m_frame->height();
+            ImGui::Checkbox("Pause", &m_paused);
+            ImGui::Checkbox("Hide topic selector", &m_hideTopicSelector);
 
-            auto avail = ImGui::GetContentRegionAvail();
-            float scale = std::min(avail.x / w, avail.y / h);
-
-            ImGui::SetCursorPos({
-                ImGui::GetCursorPosX() + (avail.x - scale*w)/2,
-                ImGui::GetCursorPosY() + (avail.y - scale*h)/2
-            });
-            ImGui::Image(reinterpret_cast<void*>(m_frame->texture()), {scale*w, scale*h});
+            ImGui::EndPopup();
         }
     }
 
@@ -66,7 +82,8 @@ public:
     {
         return {
             {"topic", m_topic},
-            {"type", m_type}
+            {"type", m_type},
+            {"hide_topic_selector", std::to_string(m_hideTopicSelector)}
         };
     }
 
@@ -80,6 +97,9 @@ public:
             m_type = *type;
             subscribe();
         }
+
+        if(auto b = settings.get("hide_topic_selector"))
+            m_hideTopicSelector = (*b == "1");
     }
 
 private:
@@ -101,12 +121,14 @@ private:
 
     void handleImage(const sensor_msgs::ImageConstPtr& msg)
     {
-        m_decoder.addMessage(msg);
+        if(!m_paused)
+            m_decoder.addMessage(msg);
     }
 
     void handleCompressedImage(const sensor_msgs::CompressedImageConstPtr& msg)
     {
-        m_decoder.addMessage(msg);
+        if(!m_paused)
+            m_decoder.addMessage(msg);
     }
 
     imgui_ros::TopicSelector m_topicSelector{
@@ -124,6 +146,9 @@ private:
     ros::Subscriber m_sub;
 
     std::optional<Decoder::OutputFrame> m_frame;
+
+    bool m_paused = false;
+    bool m_hideTopicSelector = false;
 };
 
 }
