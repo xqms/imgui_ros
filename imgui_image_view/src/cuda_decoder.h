@@ -1,10 +1,10 @@
 // High-performance image decoder with texture output
 // Author: Max Schwarz <max.schwarz@ais.uni-bonn.de>
 
-#ifndef IMGUI_IMAGE_VIEW_DECODER_H
-#define IMGUI_IMAGE_VIEW_DECODER_H
+#ifndef IMGUI_IMAGE_VIEW_CUDA_DECODER_H
+#define IMGUI_IMAGE_VIEW_CUDA_DECODER_H
 
-#if !CUDA_DECODER
+#if CUDA_DECODER
 
 #include <sensor_msgs/CompressedImage.h>
 #include <sensor_msgs/Image.h>

@@ -1,7 +1,7 @@
 // Decoder with texture output
 // Author: Max Schwarz <max.schwarz@ais.uni-bonn.de>
 
-#if !CUDA_DECODER
+#if CUDA_DECODER
 
 extern "C"
 {
@@ -11,14 +11,19 @@ extern "C"
 #include <GL/glx.h>
 }
 
-#include "decoder.h"
+#include "cuda_decoder.h"
+
+#include <cuda_runtime.h>
+#include <cuda_gl_interop.h>
+
+#include <nppi_color_conversion.h>
+#include <nppi_data_exchange_and_initialization.h>
 
 extern "C"
 {
 #include <libavcodec/avcodec.h>
 #include <libavutil/pixdesc.h>
-#include <libswscale/swscale.h>
-#include <libavutil/opt.h>
+#include <libavutil/hwcontext_cuda.h>
 }
 
 #include <deque>
@@ -48,14 +53,15 @@ namespace
         std::unique_ptr<imgui_image_view::Decoder::OutputFrameData> frameData;
     };
 
-    class Texture
+    class CUDATexture
     {
     public:
-        Texture()
+        CUDATexture()
         {
         }
 
-        Texture(int w, int h)
+        CUDATexture(int w, int h, std::optional<cudaStream_t> stream)
+         : m_stream{stream}
         {
             glCreateTextures(GL_TEXTURE_2D, 1, &m_texture);
 
@@ -70,34 +76,106 @@ namespace
             glTextureParameteri(m_texture, GL_TEXTURE_MAX_LEVEL, 1);
 
             glTextureStorage2D(m_texture, 1, GL_RGBA8, w, h);
+
+            if(stream)
+            {
+                if(auto err = cudaGraphicsGLRegisterImage(&m_resource, m_texture, GL_TEXTURE_2D, cudaGraphicsRegisterFlagsWriteDiscard))
+                {
+                    fprintf(stderr, "Could not register GL texture with CUDA: %s (%d)\n", cudaGetErrorString(err), err);
+                    std::abort();
+                }
+            }
         }
 
-        Texture(const Texture&) = delete;
-        Texture& operator=(const Texture&) = delete;
+        CUDATexture(const CUDATexture&) = delete;
+        CUDATexture& operator=(const CUDATexture&) = delete;
 
-        Texture(Texture&& other)
-         : m_texture{other.m_texture}
+        CUDATexture(CUDATexture&& other)
+         : m_stream{other.m_stream}
+         , m_texture{other.m_texture}
+         , m_resource{other.m_resource}
+         , m_levelArray{other.m_levelArray}
+         , m_mapped{other.m_mapped}
         {
             other.m_texture = -1;
+            other.m_resource = 0;
+            other.m_levelArray = {};
+            other.m_mapped = false;
         }
 
-        Texture& operator=(Texture&& other)
+        CUDATexture& operator=(CUDATexture&& other)
         {
             std::swap(m_texture, other.m_texture);
+            std::swap(m_stream, other.m_stream);
+            std::swap(m_mapped, other.m_mapped);
+            std::swap(m_resource, other.m_resource);
+            std::swap(m_levelArray, other.m_levelArray);
             return *this;
         }
 
-        ~Texture()
+        ~CUDATexture()
         {
+            if(m_mapped)
+                unmap();
+
+            if(m_resource)
+                cudaGraphicsUnregisterResource(m_resource);
+
             if(m_texture != static_cast<GLuint>(-1))
                 glDeleteTextures(1, &m_texture);
         }
+
+        void map()
+        {
+            assert(!m_mapped);
+
+            if(auto err = cudaGraphicsMapResources(1, &m_resource, *m_stream))
+            {
+                fprintf(stderr, "Could not map GL buffer to CUDA: %s (%d)\n", cudaGetErrorString(err), err);
+                std::abort();
+            }
+
+            cudaMipmappedArray_t array{}; // NOTE: I assume I don't have to free this...
+            if(auto err = cudaGraphicsResourceGetMappedMipmappedArray(&array, m_resource))
+            {
+                fprintf(stderr, "Could not get mapped array: %s (%d)\n", cudaGetErrorString(err), err);
+                std::abort();
+            }
+
+            if(auto err = cudaGetMipmappedArrayLevel(&m_levelArray, array, 0))
+            {
+                fprintf(stderr, "Could not get mapped array: %s (%d)\n", cudaGetErrorString(err), err);
+                std::abort();
+            }
+
+            m_mapped = true;
+        }
+
+        void unmap()
+        {
+            assert(m_mapped);
+
+            if(auto err = cudaGraphicsUnmapResources(1, &m_resource, *m_stream))
+            {
+                fprintf(stderr, "Could not unmap GL buffer from CUDA: %s (%d)\n", cudaGetErrorString(err), err);
+                std::abort();
+            }
+
+            m_mapped = false;
+        }
+
+        cudaArray_t deviceArray()
+        { return m_levelArray; }
 
         GLuint texture()
         { return m_texture; }
 
     private:
+        std::optional<cudaStream_t> m_stream{};
         GLuint m_texture = static_cast<GLuint>(-1);
+        cudaGraphicsResource_t m_resource{};
+        cudaArray_t m_levelArray{};
+        bool m_mapped = false;
     };
 }
 
@@ -115,15 +193,22 @@ public:
     ~OutputFrameData()
     {
         glDeleteSync(fence);
+
+        if(devBuffer)
+            cudaFree(&devBuffer);
+        if(devBuffer2)
+            cudaFree(&devBuffer2);
     }
 
-    void prepare(int requestedWidth, int requestedHeight);
+    void prepare(int requestedWidth, int requestedHeight, const std::optional<cudaStream_t>& stream);
 
     Decoder::Private* decoder;
 
-    Texture texture;
+    CUDATexture texture;
     int width = 0;
     int height = 0;
+    uint8_t* devBuffer = 0;
+    uint8_t* devBuffer2 = 0;
     GLsync fence{};
 
     sensor_msgs::CompressedImageConstPtr msg;
@@ -162,24 +247,26 @@ private:
     std::mutex m_freeOutMutex;
     std::condition_variable m_freeOutCond;
 
+    int m_cudaDevice = -1;
+
     Display* m_display = {};
     GLXPbuffer m_pbuffer = {};
     GLXContext m_context = {};
+
+    cudaStream_t m_stream = {};
+    CUcontext m_cudaCtx{};
+    NppStreamContext m_nppCtx{};
 
     AVCodecContext* m_codecCtx{};
     AVCodecParserContext* m_parserCtx{};
     std::string m_codecName;
 
-    SwsContext* m_swsContext{};
-    int m_swsWidth = -1;
-    int m_swsHeight = -1;
-    int m_swsFormat = -1;
-
+    AVBufferRef* m_hwFramesCtx{};
     bool m_contextCurrent = false;
 };
 
 
-void Decoder::OutputFrameData::prepare(int requestedWidth, int requestedHeight)
+void Decoder::OutputFrameData::prepare(int requestedWidth, int requestedHeight, const std::optional<cudaStream_t>& stream)
 {
     if(fence)
     {
@@ -190,7 +277,18 @@ void Decoder::OutputFrameData::prepare(int requestedWidth, int requestedHeight)
     if(width == requestedWidth && height == requestedHeight)
         return;
 
-    texture = Texture{requestedWidth, requestedHeight};
+    if(devBuffer)
+        cudaFree(&devBuffer);
+
+    texture = CUDATexture{requestedWidth, requestedHeight, stream};
+
+    if(stream)
+    {
+        if(cudaMalloc(&devBuffer, 4*requestedWidth*requestedHeight))
+            throw std::runtime_error{"Out of GPU memory."};
+        if(cudaMalloc(&devBuffer2, 4*requestedWidth*requestedHeight))
+            throw std::runtime_error{"Out of GPU memory."};
+    }
 
     width = requestedWidth;
     height = requestedHeight;
@@ -199,6 +297,25 @@ void Decoder::OutputFrameData::prepare(int requestedWidth, int requestedHeight)
 
 Decoder::Private::Private(GLXContext glxContext)
 {
+    [&](){
+        unsigned int numDevices = 0;
+        std::array<int, 10> devices;
+        if(auto err = cudaGLGetDevices(&numDevices, devices.data(), devices.size(), cudaGLDeviceListAll))
+        {
+            ROSFMT_INFO("Could not list CUDA devices: %s (%d). Falling back to software decoding.\n", cudaGetErrorString(err), err);
+            return;
+        }
+
+        if(numDevices == 0)
+        {
+            ROSFMT_INFO("No CUDA device matching your GLX context found. Falling back to software decoding.\n");
+            return;
+        }
+
+        m_cudaDevice = devices[0];
+        cudaSetDevice(m_cudaDevice);
+    }();
+
     // Create output buffers
     for(unsigned int i = 0; i < 5; ++i)
     {
@@ -245,8 +362,8 @@ Decoder::Private::Private(GLXContext glxContext)
 
 Decoder::Private::~Private()
 {
-    if(m_swsContext)
-        sws_freeContext(m_swsContext);
+    if(m_hwFramesCtx)
+        av_buffer_unref(&m_hwFramesCtx);
 
     if(m_codecCtx)
         avcodec_free_context(&m_codecCtx);
@@ -256,6 +373,9 @@ Decoder::Private::~Private()
         av_parser_close(m_parserCtx);
         m_parserCtx = nullptr;
     }
+
+    if(m_stream)
+        cudaStreamDestroy(m_stream);
 
     if(m_context)
         glXDestroyContext(m_display, m_context);
@@ -267,11 +387,49 @@ Decoder::Private::~Private()
 
 bool Decoder::Private::initializeDecoder(const std::string& encoding, int width, int height)
 {
+    if(m_codecCtx)
+        return true;
+
     if(!m_contextCurrent)
     {
         glXMakeContextCurrent(m_display, m_pbuffer, m_pbuffer, m_context);
         m_contextCurrent = true;
     }
+
+    if(!m_stream)
+    {
+        // Init our own CUDA stream
+        if(auto err = cudaSetDevice(m_cudaDevice))
+        {
+            fprintf(stderr, "Could not set CUDA device: %s (%d)\n", cudaGetErrorString(err), err);
+            std::abort();
+        }
+
+        if(auto err = cuCtxGetCurrent(&m_cudaCtx))
+            throw std::runtime_error{fmt::format("Could not get current CUDA context: {}", err)};
+
+        if(auto err = cudaStreamCreateWithFlags(&m_stream, cudaStreamDefault))
+            throw std::runtime_error{fmt::format("Could not create CUDA stream (error {})", err)};
+
+        int device;
+        cudaGetDevice(&device);
+
+        cudaDeviceProp props{};
+
+        cudaGetDeviceProperties(&props, device);
+
+        m_nppCtx.hStream = m_stream;
+        m_nppCtx.nCudaDeviceId = device;
+        m_nppCtx.nMultiProcessorCount = props.multiProcessorCount;
+        m_nppCtx.nMaxThreadsPerMultiProcessor = props.maxThreadsPerMultiProcessor;
+        m_nppCtx.nMaxThreadsPerBlock = props.maxThreadsPerBlock;
+        m_nppCtx.nSharedMemPerBlock = props.sharedMemPerBlock;
+
+        cudaDeviceGetAttribute(&m_nppCtx.nCudaDevAttrComputeCapabilityMajor, cudaDevAttrComputeCapabilityMajor, device);
+        cudaDeviceGetAttribute(&m_nppCtx.nCudaDevAttrComputeCapabilityMinor, cudaDevAttrComputeCapabilityMinor, device);
+        cudaStreamGetFlags(m_stream, &m_nppCtx.nStreamFlags);
+    }
+
 
     if(!encoding.empty() && m_codecCtx && m_codecName == encoding)
         return true;
@@ -332,6 +490,21 @@ bool Decoder::Private::initializeDecoder(const std::string& encoding, int width,
         m_codecCtx->width = width;
     if(height >= 0)
         m_codecCtx->height = height;
+
+    AVBufferRef *hw_device_ctx = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_CUDA);
+    AVHWDeviceContext* hw_device = reinterpret_cast<AVHWDeviceContext*>(hw_device_ctx->data);
+
+    AVCUDADeviceContext* cuda_context = reinterpret_cast<AVCUDADeviceContext*>(hw_device->hwctx);
+    cuda_context->cuda_ctx = m_cudaCtx;
+    cuda_context->stream = m_stream;
+
+    if(av_hwdevice_ctx_init(hw_device_ctx) < 0)
+        throw std::runtime_error{"Could not initialize CUDA hwaccel for ffmpeg"};
+
+    m_hwFramesCtx = av_hwframe_ctx_alloc(hw_device_ctx);
+
+    m_codecCtx->hw_device_ctx = av_buffer_ref(hw_device_ctx);
+    m_codecCtx->hw_frames_ctx = av_buffer_ref(m_hwFramesCtx);
 
     if(avcodec_open2(m_codecCtx, codec, nullptr) < 0)
         throw std::runtime_error{"Could not open codec"};
@@ -401,96 +574,114 @@ void Decoder::Private::pushFrame(AVFrame* frame, AVColorSpace colorSpace, AVColo
         m_freeOutFrames.pop_front();
     }
 
-    frameData->prepare(dataWidth, dataHeight);
+    frameData->prepare(dataWidth, dataHeight, m_stream);
+    frameData->texture.map();
 
-    AVFrame* targetFrame = {};
 
-    if(frame->format == AV_PIX_FMT_RGB32 || frame->format == AV_PIX_FMT_RGBA || frame->format == AV_PIX_FMT_RGB0)
+    if(frame->format == AV_PIX_FMT_CUDA && (colorRange == AVCOL_RANGE_UNSPECIFIED || colorRange == AVCOL_RANGE_MPEG))
     {
-        ROSFMT_INFO("no conversion");
+        const uint8_t* pSrc[2] = {
+            frame->data[0],
+            frame->data[1]
+        };
+
+        NppiSize roi{dataWidth, dataHeight};
+
+        if(auto err = nppiNV12ToRGB_709CSC_8u_P2C3R_Ctx(pSrc, frame->linesize[0], frameData->devBuffer, dataWidth * 3, roi, m_nppCtx))
+            ROSFMT_ERROR("Could not convert NV12 to RGB: {}", err);
+
+        const int dstOrder[4] = {0, 1, 2, 3};
+
+        if(auto err = nppiSwapChannels_8u_C3C4R_Ctx(
+                frameData->devBuffer, 3*frame->width,
+                frameData->devBuffer2, 4*frame->width,
+                roi, dstOrder, 0xff,
+                m_nppCtx
+            ))
+        {
+            ROSFMT_ERROR("Could not convert RGB to RGBA: {}", err);
+        }
+
+        if(auto err = cudaMemcpy2DToArrayAsync(
+            frameData->texture.deviceArray(), 0, 0,
+            frameData->devBuffer2, dataWidth*4, dataWidth*4, dataHeight,
+            cudaMemcpyDeviceToDevice, m_stream))
+        {
+            ROSFMT_ERROR("Could not transfer to texture: {}", err);
+        }
+    }
+    else if(frame->format == AV_PIX_FMT_CUDA && colorRange == AVCOL_RANGE_JPEG)
+    {
+        NppiSize roi{dataWidth, dataHeight};
+
+        uint8_t* planes[3] = {
+            frameData->devBuffer,
+            frameData->devBuffer + dataWidth*dataHeight,
+            frameData->devBuffer + 2*dataWidth*dataHeight,
+        };
+        int dstStep[3] = {
+            dataWidth, dataWidth, dataWidth
+        };
+
+        if(auto err = nppiYCbCr420_8u_P2P3R_Ctx(frame->data[0], frame->linesize[0], frame->data[1], frame->linesize[1], planes, dstStep, roi, m_nppCtx))
+            ROSFMT_ERROR("Could not convert JPEG NV12 to YUV420: {}", err);
+
+        if(auto err = nppiYCbCr420ToRGB_8u_P3C3R_Ctx(planes, dstStep, frameData->devBuffer2, dataWidth * 3, roi, m_nppCtx))
+        {
+            ROSFMT_ERROR("Could not convert JPEG YUV420 to RGB: {}", err);
+        }
+
+        const int dstOrder[4] = {0, 1, 2, 3};
+
+        if(auto err = nppiSwapChannels_8u_C3C4R_Ctx(
+                frameData->devBuffer2, 3*frame->width,
+                frameData->devBuffer, 4*frame->width,
+                roi, dstOrder, 0xff,
+                m_nppCtx
+            ))
+        {
+            ROSFMT_ERROR("Could not convert RGB to RGBA: {}", err);
+        }
+
+        if(auto err = cudaMemcpy2DToArrayAsync(
+            frameData->texture.deviceArray(), 0, 0,
+            frameData->devBuffer, dataWidth*4, dataWidth*4, dataHeight,
+            cudaMemcpyDeviceToDevice, m_stream))
+        {
+            ROSFMT_ERROR("Could not transfer to texture: {}", err);
+        }
+    }
+    else if(frame->format == AV_PIX_FMT_BGR24)
+    {
+        NppiSize roi{dataWidth, dataHeight};
+
+        const int dstOrder[4] = {2, 1, 0, 3};
+
+        if(auto err = nppiSwapChannels_8u_C3C4R_Ctx(
+                frame->data[0], frame->linesize[0],
+                frameData->devBuffer, 4*frame->width,
+                roi, dstOrder, 0xff,
+                m_nppCtx
+            ))
+        {
+            ROSFMT_ERROR("Could not convert BGR to RGBA: {}", err);
+        }
+
+        if(auto err = cudaMemcpy2DToArrayAsync(
+            frameData->texture.deviceArray(), 0, 0,
+            frameData->devBuffer, dataWidth*4, dataWidth*4, dataHeight,
+            cudaMemcpyDeviceToDevice, m_stream))
+        {
+            ROSFMT_ERROR("Could not transfer to texture: {}", err);
+        }
     }
     else
     {
-        // We use and set color space / range information below, so we can
-        // map the old deprecated AV_PIX_FMT_YUVJ420P to its general
-        // variant AV_PIX_FMT_YUV420P to avoid a warning
-        if(frame->format == AV_PIX_FMT_YUVJ420P)
-            frame->format = AV_PIX_FMT_YUV420P;
-        else if(frame->format == AV_PIX_FMT_YUVJ422P)
-            frame->format = AV_PIX_FMT_YUV422P;
-
-        // Use sws to convert to target pixfmt
-        if(m_swsContext && (m_swsFormat != frame->format || m_swsWidth != dataWidth || m_swsHeight != dataHeight))
-        {
-            sws_freeContext(m_swsContext);
-            m_swsContext = nullptr;
-        }
-
-        if(!m_swsContext)
-        {
-            m_swsContext = sws_alloc_context();
-
-            av_opt_set_int(m_swsContext, "srcw", dataWidth, 0);
-            av_opt_set_int(m_swsContext, "srch", dataHeight, 0);
-            av_opt_set_int(m_swsContext, "src_format", frame->format, 0);
-            av_opt_set_int(m_swsContext, "dstw", dataWidth, 0);
-            av_opt_set_int(m_swsContext, "dsth", dataHeight, 0);
-            av_opt_set_int(m_swsContext, "dst_format", AV_PIX_FMT_RGBA, 0);
-
-            if(sws_init_context(m_swsContext, nullptr, nullptr))
-            {
-                ROSFMT_ERROR("Could not create libswscale context for conversion from {} to RGBA",
-                    safePixelFormatName(static_cast<AVPixelFormat>(frame->format))
-                );
-                return;
-            }
-
-            if(colorRange != AVCOL_RANGE_UNSPECIFIED)
-            {
-                int in_full, out_full, brightness, contrast, saturation;
-                const int *inv_table, *table;
-
-                sws_getColorspaceDetails(m_swsContext,
-                    (int **)&inv_table, &in_full,
-                    (int **)&table, &out_full,
-                    &brightness, &contrast, &saturation
-                );
-
-                int range = (colorRange == AVCOL_RANGE_JPEG) ? 1 : 0;
-                const int* tbl = sws_getCoefficients(colorSpace);
-                sws_setColorspaceDetails(m_swsContext, tbl, range, tbl, 0, brightness, contrast, saturation);
-            }
-        }
-
-        targetFrame = av_frame_alloc();
-        targetFrame->width = frame->width;
-        targetFrame->height = frame->height;
-        targetFrame->format = AV_PIX_FMT_RGBA;
-        if(auto err = av_frame_get_buffer(targetFrame, 0))
-        {
-            ROSFMT_ERROR("Could not allocate buffer: {}", err);
-            return;
-        }
-
-        if(sws_scale(m_swsContext, frame->data, frame->linesize, 0, frame->height, targetFrame->data, targetFrame->linesize) <= 0)
-        {
-            ROSFMT_ERROR("Could not convert pixel format using swscale");
-            return;
-        }
-
-        frame = targetFrame;
+        ROSFMT_ERROR("Unsupported pixel format: {}", safePixelFormatName(static_cast<AVPixelFormat>(frame->format)));
     }
 
-    glPixelStorei(GL_UNPACK_ROW_LENGTH, frame->linesize[0]/4);
-    glTextureSubImage2D(
-        frameData->texture.texture(),
-        0, // level
-        0, 0, // offset
-        dataWidth, dataHeight, // size
-        GL_RGBA, GL_UNSIGNED_BYTE,
-        frame->data[0]
-    );
-    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+
+    frameData->texture.unmap();
 
     // Provide sync fence
     frameData->fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
@@ -504,9 +695,6 @@ void Decoder::Private::pushFrame(AVFrame* frame, AVColorSpace colorSpace, AVColo
         m_outputQueue.push_back(std::move(out));
         m_jobOutCond.notify_one();
     }
-
-    if(targetFrame)
-        av_frame_free(&targetFrame);
 }
 
 void Decoder::Private::returnBuffer(std::unique_ptr<Decoder::OutputFrameData>&& buffer)
@@ -573,14 +761,22 @@ bool Decoder::Private::addMessage(const sensor_msgs::ImageConstPtr& msg)
 
     AVFrame* frame = av_frame_alloc();
 
+    if(cudaMalloc(&frame->data[0], msg->data.size()) != 0)
+    {
+        ROSFMT_ERROR("Out of GPU memory");
+        return false;
+    }
+
+    cudaMemcpyAsync(frame->data[0], msg->data.data(), msg->data.size(), cudaMemcpyHostToDevice, m_stream);
+
     frame->width = msg->width;
     frame->height = msg->height;
-    frame->data[0] = const_cast<uint8_t*>(msg->data.data());
     frame->linesize[0] = msg->step;
     frame->format = format;
 
     pushFrame(frame);
 
+    cudaFree(&frame->data[0]);
     av_frame_free(&frame);
 
     return true;

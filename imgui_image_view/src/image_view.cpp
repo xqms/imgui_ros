@@ -13,6 +13,7 @@
 #include <sensor_msgs/CompressedImage.h>
 
 #include "decoder.h"
+#include "cuda_decoder.h"
 
 namespace imgui_image_view
 {

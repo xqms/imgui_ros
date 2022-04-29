@@ -25,9 +25,16 @@ find_package(OpenGL)
 
 find_package(X11)
 
+find_package(CUDAToolkit)
+if(CUDAToolkit_FOUND)
+    message(STATUS "CUDA found, enabling CUDA decoder")
+    add_definitions(-DCUDA_DECODER=1)
+endif()
+
 add_library(imgui_image_view
     src/image_view.cpp
     src/decoder.cpp
+    src/cuda_decoder.cpp
 )
 target_link_libraries(imgui_image_view
     ${catkin_LIBRARIES}
@@ -42,6 +49,15 @@ target_link_libraries(imgui_image_view
 target_link_options(imgui_image_view PRIVATE
     "-Wl,--no-undefined"
 )
+
+if(CUDAToolkit_FOUND)
+    target_link_libraries(imgui_image_view
+        CUDA::cudart
+        CUDA::cuda_driver
+        CUDA::nppicc
+        CUDA::nppidei
+    )
+endif()
 
 install(TARGETS imgui_image_view
     LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
