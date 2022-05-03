@@ -44,10 +44,8 @@ public:
                 subscribe();
         }
 
-        ros::SteadyTime deadline = ros::SteadyTime::now() + ros::WallDuration{0.001};
-
         // Fetch all ready frames from decoder
-        while(auto newFrame = m_decoder.getNewFrame(deadline))
+        while(auto newFrame = m_decoder.getNewFrame())
             m_frame = std::move(newFrame);
 
         if(!m_frame)

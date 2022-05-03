@@ -63,7 +63,7 @@ public:
      *
      * This method is thread-safe.
      **/
-    std::optional<OutputFrame> getNewFrame(const ros::SteadyTime& deadline = {});
+    std::optional<OutputFrame> getNewFrame();
 
     void flush();
 

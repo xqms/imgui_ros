@@ -141,7 +141,7 @@ public:
 
     bool addMessage(const sensor_msgs::CompressedImageConstPtr& msg);
     bool addMessage(const sensor_msgs::ImageConstPtr& msg);
-    std::optional<OutputFrame> getNewFrame(const ros::SteadyTime& deadline);
+    std::optional<OutputFrame> getNewFrame();
 
     void flush();
 
@@ -605,15 +605,9 @@ void Decoder::Private::shutdown()
     m_freeOutCond.notify_all();
 }
 
-std::optional<Decoder::OutputFrame> Decoder::Private::getNewFrame(const ros::SteadyTime& deadline)
+std::optional<Decoder::OutputFrame> Decoder::Private::getNewFrame()
 {
     std::unique_lock<std::mutex> lock(m_jobMutex);
-
-    std::chrono::steady_clock::time_point tp(std::chrono::nanoseconds(deadline.toNSec()));
-
-    m_jobOutCond.wait_until(lock, tp, [&](){
-        return !m_outputQueue.empty();
-    });
 
     if(m_outputQueue.empty())
         return {};
@@ -623,12 +617,7 @@ std::optional<Decoder::OutputFrame> Decoder::Private::getNewFrame(const ros::Ste
     // Task is done, but the final GL transfer from buffer into texture might
     // still be running.
 
-    ros::SteadyTime now = ros::SteadyTime::now();
-    uint64_t wait_ns = 0;
-    if(now < deadline)
-        wait_ns = (deadline - now).toNSec();
-
-    GLenum syncStatus = glClientWaitSync(task.frameData->fence, 0, wait_ns);
+    GLenum syncStatus = glClientWaitSync(task.frameData->fence, 0, 0);
     if(syncStatus == GL_TIMEOUT_EXPIRED)
         return {}; // Keep task in queue
 
@@ -727,9 +716,9 @@ bool Decoder::addMessage(const sensor_msgs::ImageConstPtr& img)
     return m_d->addMessage(img);
 }
 
-std::optional<Decoder::OutputFrame> Decoder::getNewFrame(const ros::SteadyTime& deadline)
+std::optional<Decoder::OutputFrame> Decoder::getNewFrame()
 {
-    return m_d->getNewFrame(deadline);
+    return m_d->getNewFrame();
 }
 
 void Decoder::flush()
