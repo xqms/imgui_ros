@@ -3,6 +3,11 @@
 
 #include <imgui_ros/window.h>
 #include <imgui_ros/topic_selector.h>
+
+#ifndef IMGUI_DEFINE_MATH_OPERATORS
+#define IMGUI_DEFINE_MATH_OPERATORS
+#endif
+
 #include <imgui_ros/imgui/imgui.h>
 #include <imgui_ros/imgui/imgui_internal.h>
 
@@ -54,23 +59,71 @@ public:
         float w = m_frame->width();
         float h = m_frame->height();
 
+        if(m_rotation == 90 || m_rotation == -90)
+            std::swap(w,h);
+
         auto avail = ImGui::GetContentRegionAvail();
         float scale = std::min(avail.x / w, avail.y / h);
 
+        ImVec2 topLeft{0.0f, 0.0f};
+        ImVec2 bottomLeft{0.0f, 1.0f};
+        ImVec2 bottomRight{1.0f, 1.0f};
+        ImVec2 topRight{1.0f, 0.0f};
+        switch(m_rotation)
+        {
+            case 90:
+                topLeft = {1.0f,0.0f};
+                bottomLeft = {0.0f,0.0f};
+                bottomRight = {0.0f,1.0};
+                topRight = {1.0f, 1.0f};
+                break;
+            case 180:
+                topLeft = {1.0f, 1.0f};
+                bottomLeft = {1.0f,0.0f};
+                bottomRight = {0.0f,0.0f};
+                topRight = {0.0f,1.0};
+                break;
+            case -90:
+                topLeft = {0.0f,1.0};
+                bottomLeft = {1.0f, 1.0f};
+                bottomRight = {1.0f,0.0f};
+                topRight = {0.0f,0.0f};
+                break;
+        }
+
+        ImVec2 size{scale*w, scale*h};
         ImGui::SetCursorPos({
             ImGui::GetCursorPosX() + (avail.x - scale*w)/2,
             ImGui::GetCursorPosY() + (avail.y - scale*h)/2
         });
         auto id = ImGui::GetID("image");
-        ImGui::ImageButtonEx(
-            id, reinterpret_cast<void*>(m_frame->texture()), {scale*w, scale*h},
-            {0.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f}
-        );
+
+        ImGuiWindow* window = ImGui::GetCurrentWindow();
+        const ImRect bb(window->DC.CursorPos, window->DC.CursorPos + size);
+        ImGui::ItemSize(bb);
+        if(ImGui::ItemAdd(bb, id))
+        {
+            window->DrawList->AddImageQuad(
+                reinterpret_cast<void*>(m_frame->texture()),
+                bb.GetTL(),
+                bb.GetBL(),
+                bb.GetBR(),
+                bb.GetTR(),
+                topLeft, bottomLeft, bottomRight, topRight
+            );
+        }
 
         if(ImGui::BeginPopupContextItem())
         {
             ImGui::Checkbox("Pause", &m_paused);
             ImGui::Checkbox("Hide topic selector", &m_hideTopicSelector);
+
+            int step = 90;
+            ImGui::InputScalar("Rotation",  ImGuiDataType_S32, &m_rotation, &step, nullptr, "%d°");
+            while(m_rotation < -179)
+                m_rotation += 360;
+            while(m_rotation > 180)
+                m_rotation -= 360;
 
             ImGui::EndPopup();
         }
@@ -81,7 +134,8 @@ public:
         return {
             {"topic", m_topic},
             {"type", m_type},
-            {"hide_topic_selector", std::to_string(m_hideTopicSelector)}
+            {"hide_topic_selector", std::to_string(m_hideTopicSelector)},
+            {"rotation", std::to_string(m_rotation)}
         };
     }
 
@@ -98,6 +152,9 @@ public:
 
         if(auto b = settings.get("hide_topic_selector"))
             m_hideTopicSelector = (*b == "1");
+
+        if(auto v = settings.get("rotation"))
+            m_rotation = std::atoi(v->c_str());
     }
 
 private:
@@ -147,6 +204,7 @@ private:
 
     bool m_paused = false;
     bool m_hideTopicSelector = false;
+    int m_rotation = 0;
 };
 
 }
