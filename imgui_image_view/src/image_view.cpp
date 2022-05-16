@@ -1,15 +1,15 @@
 // imgui-based image view
 // Author: Max Schwarz <max.schwarz@ais.uni-bonn.de>
 
-#include <imgui_ros/window.h>
-#include <imgui_ros/topic_selector.h>
-
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
 #endif
 
+#include <imgui_ros/window.h>
+#include <imgui_ros/topic_selector.h>
 #include <imgui_ros/imgui/imgui.h>
 #include <imgui_ros/imgui/imgui_internal.h>
+#include <imgui_ros/scrolling_buffer.h>
 
 #include <pluginlib/class_list_macros.hpp>
 
@@ -20,9 +20,34 @@
 
 #include "decoder.h"
 #include "cuda_decoder.h"
+#include "rate_estimator.h"
 
 namespace imgui_image_view
 {
+
+namespace
+{
+    struct UVCoords
+    {
+        ImVec2 topLeft;
+        ImVec2 bottomLeft;
+        ImVec2 bottomRight;
+        ImVec2 topRight;
+    };
+
+    UVCoords uvCoordsForRotation(int angle)
+    {
+        switch(angle)
+        {
+            case 0:   return {{0.0f, 0.0f}, {0.0f, 1.0f}, {1.0f, 1.0f}, {1.0f, 0.0f}};
+            case 90:  return {{1.0f, 0.0f}, {0.0f, 0.0f}, {0.0f, 1.0f}, {1.0f, 1.0f}};
+            case 180: return {{1.0f, 1.0f}, {1.0f, 0.0f}, {0.0f, 0.0f}, {0.0f, 1.0f}};
+            case -90: return {{0.0f, 1.0f}, {1.0f, 1.0f}, {1.0f, 0.0f}, {0.0f, 0.0f}};
+        }
+
+        throw std::logic_error{"Invalid rotation angle"};
+    }
+}
 
 class ImageView : public imgui_ros::Window
 {
@@ -65,31 +90,7 @@ public:
         auto avail = ImGui::GetContentRegionAvail();
         float scale = std::min(avail.x / w, avail.y / h);
 
-        ImVec2 topLeft{0.0f, 0.0f};
-        ImVec2 bottomLeft{0.0f, 1.0f};
-        ImVec2 bottomRight{1.0f, 1.0f};
-        ImVec2 topRight{1.0f, 0.0f};
-        switch(m_rotation)
-        {
-            case 90:
-                topLeft = {1.0f,0.0f};
-                bottomLeft = {0.0f,0.0f};
-                bottomRight = {0.0f,1.0};
-                topRight = {1.0f, 1.0f};
-                break;
-            case 180:
-                topLeft = {1.0f, 1.0f};
-                bottomLeft = {1.0f,0.0f};
-                bottomRight = {0.0f,0.0f};
-                topRight = {0.0f,1.0};
-                break;
-            case -90:
-                topLeft = {0.0f,1.0};
-                bottomLeft = {1.0f, 1.0f};
-                bottomRight = {1.0f,0.0f};
-                topRight = {0.0f,0.0f};
-                break;
-        }
+        auto uvCoords = uvCoordsForRotation(m_rotation);
 
         ImVec2 size{scale*w, scale*h};
         ImGui::SetCursorPos({
@@ -105,13 +106,15 @@ public:
         {
             window->DrawList->AddImageQuad(
                 reinterpret_cast<void*>(m_frame->texture()),
-                bb.GetTL(),
-                bb.GetBL(),
-                bb.GetBR(),
-                bb.GetTR(),
-                topLeft, bottomLeft, bottomRight, topRight
+                bb.GetTL(), bb.GetBL(), bb.GetBR(), bb.GetTR(),
+                uvCoords.topLeft, uvCoords.bottomLeft, uvCoords.bottomRight, uvCoords.topRight
             );
         }
+
+        uint64_t msgs = m_messageCounter.exchange(0);
+        float rateNow = m_rateEstimator.rateNow();
+        float bufData[2] = {rateNow, float(msgs)};
+        m_rateBuffer.push_back(0, bufData);
 
         if(ImGui::BeginPopupContextItem())
         {
@@ -119,11 +122,21 @@ public:
             ImGui::Checkbox("Hide topic selector", &m_hideTopicSelector);
 
             int step = 90;
+            ImGui::SetNextItemWidth(200);
             ImGui::InputScalar("Rotation",  ImGuiDataType_S32, &m_rotation, &step, nullptr, "%d°");
             while(m_rotation < -179)
                 m_rotation += 360;
             while(m_rotation > 180)
                 m_rotation -= 360;
+
+            ImGui::PlotHistogram("Messages", m_rateBuffer.rowData(1), m_rateBuffer.size(), m_rateBuffer.offset(), nullptr, 0.0f, 1.5f, {200,0});
+
+            char fpsText[256];
+            snprintf(fpsText, sizeof(fpsText), "%.1f", rateNow);
+            ImGui::PlotHistogram("FPS", m_rateBuffer.rowData(0), m_rateBuffer.size(), m_rateBuffer.offset(),
+                fpsText,
+                0.0f, FLT_MAX, {200,0}
+            );
 
             ImGui::EndPopup();
         }
@@ -176,14 +189,22 @@ private:
 
     void handleImage(const sensor_msgs::ImageConstPtr& msg)
     {
-        if(!m_paused)
-            m_decoder.addMessage(msg);
+        if(m_paused)
+            return;
+
+        m_decoder.addMessage(msg);
+        m_rateEstimator.put(msg->header.stamp);
+        m_messageCounter--;
     }
 
     void handleCompressedImage(const sensor_msgs::CompressedImageConstPtr& msg)
     {
-        if(!m_paused)
-            m_decoder.addMessage(msg);
+        if(m_paused)
+            return;
+
+        m_decoder.addMessage(msg);
+        m_rateEstimator.put(msg->header.stamp);
+        m_messageCounter++;
     }
 
     imgui_ros::TopicSelector m_topicSelector{
@@ -205,6 +226,10 @@ private:
     bool m_paused = false;
     bool m_hideTopicSelector = false;
     int m_rotation = 0;
+
+    RateEstimator m_rateEstimator;
+    imgui_ros::ScrollingBuffer<200> m_rateBuffer{2};
+    std::atomic_uint64_t m_messageCounter = 0;
 };
 
 }
