@@ -92,6 +92,8 @@ public:
             m_defaultWidthNode = ImGui::CalcTextSize("/my/test/node/that/is/cool").x;
         }
 
+        ImGui::TableSetupScrollFreeze(0,1);
+
         ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, m_defaultWidthTime);
         ImGui::TableSetupColumn("Node", ImGuiTableColumnFlags_WidthFixed, m_defaultWidthNode);
         ImGui::TableSetupColumn("Message", ImGuiTableColumnFlags_WidthStretch);
@@ -241,6 +243,8 @@ private:
         if(m_paused)
             return;
 
+        // FIXME: This assumes that timestamps increase monotonically, which might not be the case, especially in networked setups.
+
         LogEntry entry;
         entry.msg = msg;
         entry.height = ImGui::CalcTextSize(msg->msg.c_str()).y;
@@ -248,7 +252,7 @@ private:
     }
 
     ros::Subscriber m_sub;
-    boost::circular_buffer<LogEntry> m_entries{1024};
+    boost::circular_buffer<LogEntry> m_entries{256};
 
     ImFont* m_font = nullptr;
 
