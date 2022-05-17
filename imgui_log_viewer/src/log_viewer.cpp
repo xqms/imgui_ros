@@ -4,6 +4,7 @@
 #include <imgui_ros/window.h>
 
 #include <imgui_ros/imgui/imgui.h>
+#include <imgui_ros/imgui/imgui_internal.h>
 #include <imgui_ros/icons.h>
 #include <imgui_ros/math.h>
 
@@ -100,13 +101,13 @@ public:
 
         ImGui::TableHeadersRow();
 
-
         char timeBuf[256];
         tm timeResult{};
 
         bool filterActive = m_filterBuf[0] != 0;
 
-        for(std::size_t row = 0; row < m_entries.size(); ++row)
+        int numEntries = m_entries.size();
+        for(int row = 0; row < numEntries; ++row)
         {
             const auto& entry = m_entries[row];
 
@@ -118,12 +119,20 @@ public:
             bool rowIsHovered = false;
 
             ImGui::TableNextRow();
-            ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, 0xff000000);
-
-            ImGui::PushID(row);
 
             ImGui::TableNextColumn();
 
+            // Rough clipping - if the row is not visible, just push an empty rect with the row height and continue
+            if(!ImGui::IsRectVisible({10, entry.height}))
+            {
+                ImGui::ItemSize({10, entry.height}, 0.0f);
+                continue;
+            }
+
+            ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, 0xff000000);
+            ImGui::PushID(row);
+
+            // First column: Timestamp
             auto& stamp = entry.msg->header.stamp;
             std::time_t time = stamp.sec;
             localtime_r(&time, &timeResult);
@@ -148,13 +157,23 @@ public:
             if(ImGui::IsItemHovered())
                 rowIsHovered = true;
 
+            // 2nd column: Node
             ImGui::TableNextColumn();
             ImGui::TextUnformatted(entry.msg->name.c_str());
 
             if(ImGui::IsItemHovered())
                 rowIsHovered = true;
 
+            // 3rd column: Message
             ImGui::TableNextColumn();
+
+            float wrapWidth = ImGui::CalcWrapWidthForPos(ImGui::GetCursorScreenPos(), 0.0f);
+            if(wrapWidth != m_logMessageWidth)
+            {
+                m_logMessageWidth = wrapWidth;
+                recalculateHeights();
+                printf("Recalculate heights\n");
+            }
 
             // Revisit this when ImGui multiline text edit can do word wrapping
             if constexpr(false)
@@ -179,12 +198,12 @@ public:
                 ImGui::PopTextWrapPos();
             }
 
-
             if(ImGui::IsItemHovered())
                 rowIsHovered = true;
 
             ImGui::PopStyleColor();
 
+            // Row context menu
             if(ImGui::IsMouseReleased(ImGuiMouseButton_Right) && rowIsHovered)
                 ImGui::OpenPopup("context");
 
@@ -204,7 +223,12 @@ public:
 
                 char cmdBuf[1024];
 
-                if(ImGui::Selectable("Open in Kate"))
+                if(ImGui::Selectable("Copy"))
+                {
+                    if(auto fn = ImGui::GetIO().SetClipboardTextFn)
+                        fn(ImGui::GetIO().ClipboardUserData, entry.msg->msg.c_str());
+                }
+                else if(ImGui::Selectable("Open in Kate"))
                 {
                     snprintf(cmdBuf, sizeof(cmdBuf), "kate '%s:%d' &", entry.msg->file.c_str(), entry.msg->line);
                     if(system(cmdBuf))
@@ -245,10 +269,24 @@ private:
 
         // FIXME: This assumes that timestamps increase monotonically, which might not be the case, especially in networked setups.
 
+        ImGui::PushFont(m_font);
+
         LogEntry entry;
         entry.msg = msg;
-        entry.height = ImGui::CalcTextSize(msg->msg.c_str()).y;
+        entry.height = ImGui::CalcTextSize(entry.msg->msg.c_str(), nullptr, false, m_logMessageWidth).y;
         m_entries.push_back(std::move(entry));
+
+        ImGui::PopFont();
+    }
+
+    void recalculateHeights()
+    {
+        ImGui::PushFont(m_font);
+
+        for(auto& entry : m_entries)
+            entry.height = ImGui::CalcTextSize(entry.msg->msg.c_str(), nullptr, false, m_logMessageWidth).y;
+
+        ImGui::PopFont();
     }
 
     ros::Subscriber m_sub;
@@ -262,6 +300,8 @@ private:
     char m_filterBuf[1024] = {0};
 
     bool m_paused = false;
+
+    float m_logMessageWidth = -1.0f;
 };
 
 }
