@@ -116,6 +116,9 @@ public:
         float bufData[2] = {rateNow, float(msgs)};
         m_rateBuffer.push_back(0, bufData);
 
+        char fpsText[256];
+        snprintf(fpsText, sizeof(fpsText), "%.1f", rateNow);
+
         if(ImGui::BeginPopupContextItem())
         {
             ImGui::Checkbox("Pause", &m_paused);
@@ -131,14 +134,19 @@ public:
 
             ImGui::PlotHistogram("Messages", m_rateBuffer.rowData(1), m_rateBuffer.size(), m_rateBuffer.offset(), nullptr, 0.0f, 1.5f, {200,0});
 
-            char fpsText[256];
-            snprintf(fpsText, sizeof(fpsText), "%.1f", rateNow);
             ImGui::PlotHistogram("FPS", m_rateBuffer.rowData(0), m_rateBuffer.size(), m_rateBuffer.offset(),
                 fpsText,
                 0.0f, FLT_MAX, {200,0}
             );
 
             ImGui::EndPopup();
+        }
+
+        {
+            auto bottomRight = ImGui::GetContentRegionMax();
+            auto height = ImGui::GetFontSize();
+            ImGui::SetCursorPos({bottomRight.x - 200, bottomRight.y - height});
+            ImGui::PlotHistogram("##hist", m_rateBuffer.rowData(1), m_rateBuffer.size(), m_rateBuffer.offset(), fpsText, 0.0f, 1.5f, {200,height});
         }
     }
 
