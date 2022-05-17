@@ -363,10 +363,6 @@ int main(int argc, char** argv)
         // Generally you may always pass all inputs to dear imgui, and hide them from your application based on those two flags.
         glfwPollEvents();
 
-        // Call ROS callbacks only after first frame to make sure everything is set up
-        if(!firstFrame)
-            ros::spinOnce();
-
         // Save CPU when we are minimized
         if(glfwGetWindowAttrib(window, GLFW_ICONIFIED))
         {
@@ -380,6 +376,10 @@ int main(int argc, char** argv)
         ImGui::NewFrame();
 
         ImGui::DockSpaceOverViewport();
+
+        // Call ROS callbacks only after first frame to make sure everything is set up
+        if(!firstFrame)
+            ros::spinOnce();
 
         // We cannot initialize a new plugin between ImGui::NewFrame / EndFrame, since it may load fonts and otherwise alter ImGui context.
         // Instead, keep the pointer here and initialize it after the EndFrame().
