@@ -349,15 +349,10 @@ int main(int argc, char** argv)
         }
     }
 
-    // Run an empty frame to make sure everything is set up before we call ROS cbs
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
-    ImGui::EndFrame();
-
     char renameWindowBuf[1024];
 
     bool showDemoWindow = false;
+    bool firstFrame = true;
 
     while(ros::ok())
     {
@@ -368,7 +363,9 @@ int main(int argc, char** argv)
         // Generally you may always pass all inputs to dear imgui, and hide them from your application based on those two flags.
         glfwPollEvents();
 
-        ros::spinOnce();
+        // Call ROS callbacks only after first frame to make sure everything is set up
+        if(!firstFrame)
+            ros::spinOnce();
 
         // Save CPU when we are minimized
         if(glfwGetWindowAttrib(window, GLFW_ICONIFIED))
@@ -475,6 +472,7 @@ int main(int argc, char** argv)
             ImGui::ShowDemoWindow();
 
         char buf[1024];
+        ImVec2 screenSize = ImGui::GetMainViewport()->Size;
         for(auto it = windows.begin(); it != windows.end(); )
         {
             auto& w = *it;
@@ -482,7 +480,8 @@ int main(int argc, char** argv)
 
             snprintf(buf, sizeof(buf), "%s###%lx", w->windowTitle.c_str(), w->instanceID);
 
-            if(ImGui::Begin(buf, &open))
+            ImGui::SetNextWindowSize({0.25f * screenSize.x, 0.25f * screenSize.y}, ImGuiCond_FirstUseEver);
+            if(ImGui::Begin(buf, &open, ImGuiWindowFlags_NoFocusOnAppearing))
             {
                 if(ImGui::BeginPopupContextItem())
                 {
@@ -626,6 +625,7 @@ int main(int argc, char** argv)
         }
 
         glfwSwapBuffers(window);
+        firstFrame = false;
     }
 
     // Cleanup
