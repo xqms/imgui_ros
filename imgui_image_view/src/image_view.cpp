@@ -14,9 +14,11 @@
 #include <pluginlib/class_list_macros.hpp>
 
 #include <ros/callback_queue.h>
+#include <ros/names.h>
 
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/CompressedImage.h>
+#include <sensor_msgs/CameraInfo.h>
 
 #include "decoder.h"
 #include "cuda_decoder.h"
@@ -84,70 +86,93 @@ public:
         float w = m_frame->width();
         float h = m_frame->height();
 
+        if(m_camInfo && m_correctAspectRatio)
+        {
+            auto camInfo = m_camInfo;
+
+            float fx = m_camInfo->K[0];
+            float fy = m_camInfo->K[3*1 + 1];
+            float factor = fx / fy;
+
+            h *= factor;
+        }
+
         if(m_rotation == 90 || m_rotation == -90)
             std::swap(w,h);
 
-        auto avail = ImGui::GetContentRegionAvail();
-        float scale = std::min(avail.x / w, avail.y / h);
-
         auto uvCoords = uvCoordsForRotation(m_rotation);
 
-        ImVec2 size{scale*w, scale*h};
-        ImGui::SetCursorPos({
-            ImGui::GetCursorPosX() + (avail.x - scale*w)/2,
-            ImGui::GetCursorPosY() + (avail.y - scale*h)/2
-        });
-        auto id = ImGui::GetID("image");
-
-        ImGuiWindow* window = ImGui::GetCurrentWindow();
-        const ImRect bb(window->DC.CursorPos, window->DC.CursorPos + size);
-        ImGui::ItemSize(bb);
-        if(ImGui::ItemAdd(bb, id))
+        if(ImGui::BeginChild("imgwin", ImGui::GetContentRegionAvail(), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
         {
-            window->DrawList->AddImageQuad(
-                reinterpret_cast<void*>(m_frame->texture()),
-                bb.GetTL(), bb.GetBL(), bb.GetBR(), bb.GetTR(),
-                uvCoords.topLeft, uvCoords.bottomLeft, uvCoords.bottomRight, uvCoords.topRight
-            );
+            auto avail = ImGui::GetContentRegionAvail();
+            float scale = m_fillScreen
+                ? std::max(avail.x / w, avail.y / h)
+                : std::min(avail.x / w, avail.y / h);
+
+            ImVec2 size{scale*w, scale*h};
+            ImGui::SetCursorPos({
+                ImGui::GetCursorPosX() + (avail.x - scale*w)/2,
+                ImGui::GetCursorPosY() + (avail.y - scale*h)/2
+            });
+            auto id = ImGui::GetID("image");
+
+            ImGuiWindow* window = ImGui::GetCurrentWindow();
+            const ImRect bb(window->DC.CursorPos, window->DC.CursorPos + size);
+
+            ImGui::ItemSize(bb);
+            if(ImGui::ItemAdd(bb, id))
+            {
+                window->DrawList->AddImageQuad(
+                    reinterpret_cast<void*>(m_frame->texture()),
+                    bb.GetTL(), bb.GetBL(), bb.GetBR(), bb.GetTR(),
+                    uvCoords.topLeft, uvCoords.bottomLeft, uvCoords.bottomRight, uvCoords.topRight
+                );
+            }
+
+            uint64_t msgs = m_messageCounter.exchange(0);
+            float rateNow = m_rateEstimator.rateNow();
+            float bufData[2] = {rateNow, float(msgs)};
+            m_rateBuffer.push_back(0, bufData);
+
+            char fpsText[256];
+            snprintf(fpsText, sizeof(fpsText), "%.1f", rateNow);
+
+            if(ImGui::BeginPopupContextItem())
+            {
+                ImGui::Checkbox("Pause", &m_paused);
+                ImGui::Checkbox("Hide topic selector", &m_hideTopicSelector);
+
+                ImGui::Checkbox("Show FPS", &m_showFPS);
+                ImGui::Checkbox("Fill screen", &m_fillScreen);
+                ImGui::Checkbox("Correct aspect ratio", &m_correctAspectRatio);
+
+                int step = 90;
+                ImGui::SetNextItemWidth(200);
+                ImGui::InputScalar("Rotation",  ImGuiDataType_S32, &m_rotation, &step, nullptr, "%d°");
+                while(m_rotation < -179)
+                    m_rotation += 360;
+                while(m_rotation > 180)
+                    m_rotation -= 360;
+
+                ImGui::PlotHistogram("Messages", m_rateBuffer.rowData(1), m_rateBuffer.size(), m_rateBuffer.offset(), nullptr, 0.0f, 1.5f, {200,0});
+
+                ImGui::PlotHistogram("FPS", m_rateBuffer.rowData(0), m_rateBuffer.size(), m_rateBuffer.offset(),
+                    fpsText,
+                    0.0f, FLT_MAX, {200,0}
+                );
+
+                ImGui::EndPopup();
+            }
+
+            if(m_showFPS)
+            {
+                auto bottomRight = ImGui::GetContentRegionMax();
+                auto height = ImGui::GetFontSize();
+                ImGui::SetCursorPos({bottomRight.x - 200, bottomRight.y - height});
+                ImGui::PlotHistogram("##hist", m_rateBuffer.rowData(1), m_rateBuffer.size(), m_rateBuffer.offset(), fpsText, 0.0f, 1.5f, {200,height});
+            }
         }
-
-        uint64_t msgs = m_messageCounter.exchange(0);
-        float rateNow = m_rateEstimator.rateNow();
-        float bufData[2] = {rateNow, float(msgs)};
-        m_rateBuffer.push_back(0, bufData);
-
-        char fpsText[256];
-        snprintf(fpsText, sizeof(fpsText), "%.1f", rateNow);
-
-        if(ImGui::BeginPopupContextItem())
-        {
-            ImGui::Checkbox("Pause", &m_paused);
-            ImGui::Checkbox("Hide topic selector", &m_hideTopicSelector);
-
-            int step = 90;
-            ImGui::SetNextItemWidth(200);
-            ImGui::InputScalar("Rotation",  ImGuiDataType_S32, &m_rotation, &step, nullptr, "%d°");
-            while(m_rotation < -179)
-                m_rotation += 360;
-            while(m_rotation > 180)
-                m_rotation -= 360;
-
-            ImGui::PlotHistogram("Messages", m_rateBuffer.rowData(1), m_rateBuffer.size(), m_rateBuffer.offset(), nullptr, 0.0f, 1.5f, {200,0});
-
-            ImGui::PlotHistogram("FPS", m_rateBuffer.rowData(0), m_rateBuffer.size(), m_rateBuffer.offset(),
-                fpsText,
-                0.0f, FLT_MAX, {200,0}
-            );
-
-            ImGui::EndPopup();
-        }
-
-        {
-            auto bottomRight = ImGui::GetContentRegionMax();
-            auto height = ImGui::GetFontSize();
-            ImGui::SetCursorPos({bottomRight.x - 200, bottomRight.y - height});
-            ImGui::PlotHistogram("##hist", m_rateBuffer.rowData(1), m_rateBuffer.size(), m_rateBuffer.offset(), fpsText, 0.0f, 1.5f, {200,height});
-        }
+        ImGui::EndChild();
     }
 
     imgui_ros::Settings getState() const override
@@ -156,7 +181,10 @@ public:
             {"topic", m_topic},
             {"type", m_type},
             {"hide_topic_selector", std::to_string(m_hideTopicSelector)},
-            {"rotation", std::to_string(m_rotation)}
+            {"rotation", std::to_string(m_rotation)},
+            {"correct_aspect_ratio", std::to_string(m_correctAspectRatio)},
+            {"fill_screen", std::to_string(m_fillScreen)},
+            {"show_fps", std::to_string(m_showFPS)}
         };
     }
 
@@ -176,6 +204,15 @@ public:
 
         if(auto v = settings.get("rotation"))
             m_rotation = std::atoi(v->c_str());
+
+        if(auto v = settings.get("correct_aspect_ratio"))
+            m_correctAspectRatio = (*v == "1");
+
+        if(auto v = settings.get("fill_screen"))
+            m_fillScreen = (*v == "1");
+
+        if(auto v = settings.get("show_fps"))
+            m_showFPS = (*v == "1");
     }
 
 private:
@@ -188,11 +225,15 @@ private:
             return;
 
         m_decoder.flush();
+        m_camInfo = {};
 
         if(m_type == "sensor_msgs/Image")
             m_sub = m_threadNH.subscribe(m_topic, 1, &ImageView::handleImage, this);
         else if(m_type == "sensor_msgs/CompressedImage")
             m_sub = m_threadNH.subscribe(m_topic, 1, &ImageView::handleCompressedImage, this);
+
+        std::string infoTopic = ros::names::parentNamespace(m_topic) + "/camera_info";
+        m_sub_camInfo = m_threadNH.subscribe(infoTopic, 1, &ImageView::handleCameraInfo, this);
     }
 
     void handleImage(const sensor_msgs::ImageConstPtr& msg)
@@ -215,6 +256,11 @@ private:
         m_messageCounter++;
     }
 
+    void handleCameraInfo(const sensor_msgs::CameraInfoConstPtr& msg)
+    {
+        m_camInfo = msg;
+    }
+
     imgui_ros::TopicSelector m_topicSelector{
         "sensor_msgs/Image", "sensor_msgs/CompressedImage"
     };
@@ -228,6 +274,7 @@ private:
     ros::NodeHandle m_threadNH;
     ros::AsyncSpinner m_spinner{1, &m_threadQueue};
     ros::Subscriber m_sub;
+    ros::Subscriber m_sub_camInfo;
 
     std::optional<Decoder::OutputFrame> m_frame;
 
@@ -238,6 +285,12 @@ private:
     RateEstimator m_rateEstimator;
     imgui_ros::ScrollingBuffer<200> m_rateBuffer{2};
     std::atomic_uint64_t m_messageCounter = 0;
+
+    sensor_msgs::CameraInfoConstPtr m_camInfo;
+    bool m_correctAspectRatio = false;
+
+    bool m_showFPS = true;
+    bool m_fillScreen = false;
 };
 
 }
