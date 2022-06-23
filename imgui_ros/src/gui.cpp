@@ -5,6 +5,8 @@
 
 #include <ros/ros.h>
 
+#include "imgui_internal.h"
+
 #include "../contrib/imgui/backends/imgui_impl_glfw.h"
 #include "../contrib/imgui/backends/imgui_impl_opengl3.h"
 
@@ -202,7 +204,9 @@ int main(int argc, char** argv)
     glfwWindowHint(GLFW_SAMPLES, MSAA);
 
     // Create window with graphics context
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "imgui_ros", NULL, NULL);
+    char windowTitle[256];
+    snprintf(windowTitle, sizeof(windowTitle), "imgui_ros: %s", perspective.c_str());
+    GLFWwindow* window = glfwCreateWindow(1280, 720, windowTitle, NULL, NULL);
     if (window == NULL)
         return 1;
     glfwMakeContextCurrent(window);
@@ -247,6 +251,8 @@ int main(int argc, char** argv)
     std::vector<std::unique_ptr<Window>> windows;
     bool windowListDirty = false;
 
+    bool fullscreen = false;
+
     // Load settings
     if(fs::exists(configPath))
     {
@@ -257,6 +263,7 @@ int main(int argc, char** argv)
         static const std::regex REGEX_PLUGIN{R"EOS(^plugin=\"(.*)\"$)EOS"};
         static const std::regex REGEX_SETTING{R"EOS(^setting_(.*)="(.*)"$)EOS"};
         static const std::regex REGEX_WINDOW{R"EOS(^window=(\d+)x(\d+)\+(\d+)\+(\d+)$)EOS"};
+        static const std::regex REGEX_FULLSCREEN{R"EOS(^fullscreen=(\d+)$)EOS"};
 
         std::string windowTitle;
         std::uint64_t id;
@@ -332,6 +339,10 @@ int main(int argc, char** argv)
                 windowX = std::atoi(matchData[3].str().c_str());
                 windowY = std::atoi(matchData[4].str().c_str());
             }
+            else if(std::regex_match(line, matchData, REGEX_FULLSCREEN))
+            {
+                fullscreen = std::atoi(matchData[1].str().c_str());
+            }
             else
             {
                 ROS_ERROR("Invalid settings line: '%s'", line.c_str());
@@ -385,7 +396,13 @@ int main(int argc, char** argv)
         // Instead, keep the pointer here and initialize it after the EndFrame().
         std::unique_ptr<Window> newWindow = {};
 
-        if(ImGui::BeginMainMenuBar())
+        if(ImGui::IsKeyReleased(ImGuiKey_F11))
+        {
+            fullscreen = !fullscreen;
+            windowListDirty = true;
+        }
+
+        if(!fullscreen && ImGui::BeginMainMenuBar())
         {
             bool pluginError = false;
 
@@ -473,6 +490,15 @@ int main(int argc, char** argv)
 
         char buf[1024];
         ImVec2 screenSize = ImGui::GetMainViewport()->Size;
+
+        ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoFocusOnAppearing;
+        ImGuiWindowClass windowClass{};
+        if(fullscreen)
+        {
+            windowClass.DockNodeFlagsOverrideSet = ImGuiDockNodeFlags_NoTabBar;
+            windowFlags |= ImGuiWindowFlags_NoDecoration;
+        }
+
         for(auto it = windows.begin(); it != windows.end(); )
         {
             auto& w = *it;
@@ -481,7 +507,9 @@ int main(int argc, char** argv)
             snprintf(buf, sizeof(buf), "%s###%lx", w->windowTitle.c_str(), w->instanceID);
 
             ImGui::SetNextWindowSize({0.25f * screenSize.x, 0.25f * screenSize.y}, ImGuiCond_FirstUseEver);
-            if(ImGui::Begin(buf, &open, ImGuiWindowFlags_NoFocusOnAppearing))
+            ImGui::SetNextWindowClass(&windowClass);
+
+            if(ImGui::Begin(buf, &open, windowFlags))
             {
                 if(ImGui::BeginPopupContextItem())
                 {
@@ -561,7 +589,8 @@ int main(int argc, char** argv)
                     int x, y, width, height;
                     glfwGetWindowPos(window, &x, &y);
                     glfwGetWindowSize(window, &width, &height);
-                    out << "window=" << width << "x" << height << "+" << x << "+" << y << "\n\n";
+                    out << "window=" << width << "x" << height << "+" << x << "+" << y << "\n";
+                    out << "fullscreen=" << fullscreen << "\n\n";
 
                     for(auto& w : windows)
                     {
