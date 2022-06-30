@@ -140,6 +140,12 @@ public:
             if(ImGui::BeginPopupContextItem())
             {
                 ImGui::Checkbox("Pause", &m_paused);
+
+                {
+                    int step = 1;
+                    ImGui::InputScalar("Rate limit", ImGuiDataType_U32, &m_rateLimit, &step);
+                }
+
                 ImGui::Checkbox("Hide topic selector", &m_hideTopicSelector);
 
                 ImGui::Checkbox("Show FPS", &m_showFPS);
@@ -184,7 +190,8 @@ public:
             {"rotation", std::to_string(m_rotation)},
             {"correct_aspect_ratio", std::to_string(m_correctAspectRatio)},
             {"fill_screen", std::to_string(m_fillScreen)},
-            {"show_fps", std::to_string(m_showFPS)}
+            {"show_fps", std::to_string(m_showFPS)},
+            {"rate_limit", std::to_string(m_rateLimit)}
         };
     }
 
@@ -213,6 +220,9 @@ public:
 
         if(auto v = settings.get("show_fps"))
             m_showFPS = (*v == "1");
+
+        if(auto v = settings.get("rate_limit"))
+            m_rateLimit = std::atoi(v->c_str());
     }
 
 private:
@@ -236,24 +246,50 @@ private:
         m_sub_camInfo = m_threadNH.subscribe(infoTopic, 1, &ImageView::handleCameraInfo, this);
     }
 
-    void handleImage(const sensor_msgs::ImageConstPtr& msg)
+    bool computeFrameSkip(const ros::Time& stamp)
     {
         if(m_paused)
+            return true;
+
+        m_rateEstimator.put(stamp);
+        m_messageCounter++;
+
+        ros::Time now = ros::Time::now();
+        if(m_lastMsgTime == ros::Time(0))
+            m_lastMsgTime = now;
+        else
+        {
+            // Basic token bucket algorithm for rate limiting
+            ros::Duration elapsed = now - m_lastMsgTime;
+            m_lastMsgTime = now;
+
+            m_throttleAllowance = std::min(2.0f,
+                m_throttleAllowance + static_cast<float>(elapsed.toSec()) * m_rateLimit
+            );
+
+            if(m_throttleAllowance < 1.0f)
+                return true;
+
+            m_throttleAllowance -= 1.0f;
+        }
+
+        return false;
+    }
+
+    void handleImage(const sensor_msgs::ImageConstPtr& msg)
+    {
+        if(computeFrameSkip(msg->header.stamp))
             return;
 
         m_decoder.addMessage(msg);
-        m_rateEstimator.put(msg->header.stamp);
-        m_messageCounter--;
     }
 
     void handleCompressedImage(const sensor_msgs::CompressedImageConstPtr& msg)
     {
-        if(m_paused)
+        if(computeFrameSkip(msg->header.stamp))
             return;
 
         m_decoder.addMessage(msg);
-        m_rateEstimator.put(msg->header.stamp);
-        m_messageCounter++;
     }
 
     void handleCameraInfo(const sensor_msgs::CameraInfoConstPtr& msg)
@@ -291,6 +327,10 @@ private:
 
     bool m_showFPS = true;
     bool m_fillScreen = false;
+
+    int m_rateLimit = 60;
+    float m_throttleAllowance = 0.0f;
+    ros::Time m_lastMsgTime;
 };
 
 }
