@@ -172,7 +172,6 @@ public:
             {
                 m_logMessageWidth = wrapWidth;
                 recalculateHeights();
-                printf("Recalculate heights\n");
             }
 
             // Revisit this when ImGui multiline text edit can do word wrapping
