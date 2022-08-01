@@ -167,6 +167,8 @@ public:
                     0.0f, FLT_MAX, {200,0}
                 );
 
+                ImGui::Text("%dx%d", m_frame->width(), m_frame->height());
+
                 ImGui::EndPopup();
             }
 
