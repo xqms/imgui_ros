@@ -824,7 +824,9 @@ bool Decoder::Private::addMessage(const sensor_msgs::ImageConstPtr& msg)
 
     pushFrame(frame);
 
-    cudaFree(&frame->data[0]);
+    if(auto error = cudaFree(frame->data[0]))
+        ROSFMT_ERROR("cudaFree failed: {}", cudaGetErrorString(error));
+
     av_frame_free(&frame);
 
     return true;
