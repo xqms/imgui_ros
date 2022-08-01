@@ -288,6 +288,8 @@ void Decoder::OutputFrameData::prepare(int requestedWidth, int requestedHeight, 
             throw std::runtime_error{"Out of GPU memory."};
         if(cudaMalloc(&devBuffer2, 4*requestedWidth*requestedHeight))
             throw std::runtime_error{"Out of GPU memory."};
+
+        cudaMemset(devBuffer, 0xFF, 4*requestedWidth*requestedHeight);
     }
 
     width = requestedWidth;
@@ -665,6 +667,52 @@ void Decoder::Private::pushFrame(AVFrame* frame, AVColorSpace colorSpace, AVColo
             ))
         {
             ROSFMT_ERROR("Could not convert BGR to RGBA: {}", err);
+        }
+
+        if(auto err = cudaMemcpy2DToArrayAsync(
+            frameData->texture.deviceArray(), 0, 0,
+            frameData->devBuffer, dataWidth*4, dataWidth*4, dataHeight,
+            cudaMemcpyDeviceToDevice, m_stream))
+        {
+            ROSFMT_ERROR("Could not transfer to texture: {}", err);
+        }
+    }
+    else if(frame->format == AV_PIX_FMT_RGB24)
+    {
+        NppiSize roi{dataWidth, dataHeight};
+
+        const int dstOrder[4] = {0, 1, 2, 3};
+
+        if(auto err = nppiSwapChannels_8u_C3C4R_Ctx(
+                frame->data[0], frame->linesize[0],
+                frameData->devBuffer, 4*frame->width,
+                roi, dstOrder, 0xff,
+                m_nppCtx
+            ))
+        {
+            ROSFMT_ERROR("Could not convert RGB24 to RGBA: {}", err);
+        }
+
+        if(auto err = cudaMemcpy2DToArrayAsync(
+            frameData->texture.deviceArray(), 0, 0,
+            frameData->devBuffer, dataWidth*4, dataWidth*4, dataHeight,
+            cudaMemcpyDeviceToDevice, m_stream))
+        {
+            ROSFMT_ERROR("Could not transfer to texture: {}", err);
+        }
+    }
+    else if(frame->format == AV_PIX_FMT_GRAY8)
+    {
+        NppiSize roi{dataWidth, dataHeight};
+
+        if(auto err = nppiDup_8u_C1AC4R_Ctx(
+                frame->data[0], frame->linesize[0],
+                frameData->devBuffer, 4*frame->width,
+                roi,
+                m_nppCtx
+            ))
+        {
+            ROSFMT_ERROR("Could not convert gray to RGBA: {}", err);
         }
 
         if(auto err = cudaMemcpy2DToArrayAsync(
