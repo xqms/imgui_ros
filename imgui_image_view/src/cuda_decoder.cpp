@@ -459,6 +459,8 @@ bool Decoder::Private::initializeDecoder(const std::string& encoding, int width,
         codecID = AV_CODEC_ID_MJPEG;
     else if(strcasecmp(encoding.c_str(), "rgb8; jpeg compressed bgr8") == 0)
         codecID = AV_CODEC_ID_MJPEG;
+    else if(strcasecmp(encoding.c_str(), "rgba8; jpeg compressed bgr8") == 0)
+        codecID = AV_CODEC_ID_MJPEG;
     else if(strcasecmp(encoding.c_str(), "jpeg") == 0)
         codecID = AV_CODEC_ID_MJPEG;
     else
@@ -723,6 +725,16 @@ void Decoder::Private::pushFrame(AVFrame* frame, AVColorSpace colorSpace, AVColo
             ROSFMT_ERROR("Could not transfer to texture: {}", err);
         }
     }
+    else if(frame->format == AV_PIX_FMT_RGBA)
+    {
+        if(auto err = cudaMemcpy2DToArrayAsync(
+            frameData->texture.deviceArray(), 0, 0,
+            frame->data[0], dataWidth*4, dataWidth*4, dataHeight,
+            cudaMemcpyDeviceToDevice, m_stream))
+        {
+            ROSFMT_ERROR("Could not transfer to texture: {}", err);
+        }
+    }
     else
     {
         ROSFMT_ERROR("Unsupported pixel format: {}", safePixelFormatName(static_cast<AVPixelFormat>(frame->format)));
@@ -801,6 +813,8 @@ bool Decoder::Private::addMessage(const sensor_msgs::ImageConstPtr& msg)
         format = AV_PIX_FMT_BGR24;
     else if(msg->encoding == "mono8")
         format = AV_PIX_FMT_GRAY8;
+    else if(msg->encoding == "rgba8")
+        format = AV_PIX_FMT_RGBA;
     else
     {
         ROSFMT_WARN_THROTTLE(1.0, "Received image with unsupported encoding '{}', ignoring", msg->encoding);
