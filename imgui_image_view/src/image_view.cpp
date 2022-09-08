@@ -143,6 +143,7 @@ public:
 
                 {
                     int step = 1;
+                    ImGui::SetNextItemWidth(200);
                     ImGui::InputScalar("Rate limit", ImGuiDataType_U32, &m_rateLimit, &step);
                 }
 
@@ -151,6 +152,15 @@ public:
                 ImGui::Checkbox("Show FPS", &m_showFPS);
                 ImGui::Checkbox("Fill screen", &m_fillScreen);
                 ImGui::Checkbox("Correct aspect ratio", &m_correctAspectRatio);
+                ImGui::SetNextItemWidth(200);
+                ImGui::InputText("Heartbeat topic", m_heartbeatTopic, sizeof(m_heartbeatTopic));
+                if(ImGui::IsItemDeactivated())
+                {
+                    if(m_heartbeatTopic[0] != 0)
+                        m_pub_heartBeat = m_threadNH.advertise<std_msgs::Header>(m_heartbeatTopic, 1);
+                    else
+                        m_pub_heartBeat = {};
+                }
 
                 int step = 90;
                 ImGui::SetNextItemWidth(200);
@@ -179,6 +189,14 @@ public:
                 ImGui::SetCursorPos({bottomRight.x - 200, bottomRight.y - height});
                 ImGui::PlotHistogram("##hist", m_rateBuffer.rowData(1), m_rateBuffer.size(), m_rateBuffer.offset(), fpsText, 0.0f, 1.5f, {200,height});
             }
+
+            if(m_heartbeatTopic[0] != 0 && rateNow > 1)
+            {
+                std_msgs::Header msg;
+                msg.stamp = ros::Time::now();
+                m_pub_heartBeat.publish(msg);
+            }
+
         }
         ImGui::EndChild();
     }
@@ -193,7 +211,8 @@ public:
             {"correct_aspect_ratio", std::to_string(m_correctAspectRatio)},
             {"fill_screen", std::to_string(m_fillScreen)},
             {"show_fps", std::to_string(m_showFPS)},
-            {"rate_limit", std::to_string(m_rateLimit)}
+            {"rate_limit", std::to_string(m_rateLimit)},
+            {"heartbeat_topic", m_heartbeatTopic}
         };
     }
 
@@ -225,6 +244,9 @@ public:
 
         if(auto v = settings.get("rate_limit"))
             m_rateLimit = std::atoi(v->c_str());
+
+        if(auto v = settings.get("heartbeat_topic"))
+            strncpy(m_heartbeatTopic, v->c_str(), sizeof(m_heartbeatTopic) -1);
     }
 
 private:
@@ -246,6 +268,7 @@ private:
 
         std::string infoTopic = ros::names::parentNamespace(m_topic) + "/camera_info";
         m_sub_camInfo = m_threadNH.subscribe(infoTopic, 1, &ImageView::handleCameraInfo, this);
+
     }
 
     bool computeFrameSkip(const ros::Time& stamp)
@@ -313,6 +336,7 @@ private:
     ros::AsyncSpinner m_spinner{1, &m_threadQueue};
     ros::Subscriber m_sub;
     ros::Subscriber m_sub_camInfo;
+    ros::Publisher m_pub_heartBeat;
 
     std::optional<Decoder::OutputFrame> m_frame;
 
@@ -329,6 +353,7 @@ private:
 
     bool m_showFPS = true;
     bool m_fillScreen = false;
+    char m_heartbeatTopic[256] = {0};
 
     int m_rateLimit = 60;
     float m_throttleAllowance = 0.0f;
