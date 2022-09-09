@@ -155,12 +155,7 @@ public:
                 ImGui::SetNextItemWidth(200);
                 ImGui::InputText("Heartbeat topic", m_heartbeatTopic, sizeof(m_heartbeatTopic));
                 if(ImGui::IsItemDeactivated())
-                {
-                    if(m_heartbeatTopic[0] != 0)
-                        m_pub_heartBeat = m_threadNH.advertise<std_msgs::Header>(m_heartbeatTopic, 1);
-                    else
-                        m_pub_heartBeat = {};
-                }
+                    initHeartbeat();
 
                 int step = 90;
                 ImGui::SetNextItemWidth(200);
@@ -246,7 +241,11 @@ public:
             m_rateLimit = std::atoi(v->c_str());
 
         if(auto v = settings.get("heartbeat_topic"))
+        {
             strncpy(m_heartbeatTopic, v->c_str(), sizeof(m_heartbeatTopic) -1);
+            m_heartbeatTopic[sizeof(m_heartbeatTopic)-1] = 0;
+            initHeartbeat();
+        }
     }
 
 private:
@@ -268,7 +267,14 @@ private:
 
         std::string infoTopic = ros::names::parentNamespace(m_topic) + "/camera_info";
         m_sub_camInfo = m_threadNH.subscribe(infoTopic, 1, &ImageView::handleCameraInfo, this);
+    }
 
+    void initHeartbeat()
+    {
+        if(m_heartbeatTopic[0] != 0)
+            m_pub_heartBeat = m_threadNH.advertise<std_msgs::Header>(m_heartbeatTopic, 1);
+        else
+            m_pub_heartBeat = {};
     }
 
     bool computeFrameSkip(const ros::Time& stamp)
