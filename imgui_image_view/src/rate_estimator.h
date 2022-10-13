@@ -31,6 +31,20 @@ private:
 
 void RateEstimator::put(const ros::Time& time)
 {
+    if(time == ros::Time(0))
+    {
+        m_lambdaSmoothLast = 0.0f;
+        m_lambdaLast = 0.0f;
+        return;
+    }
+    else if(time < m_lastMessageTime)
+    {
+        m_lambdaSmoothLast = 0.0f;
+        m_lambdaLast = 0.0f;
+        m_lastMessageTime = time;
+        return;
+    }
+
     // The smooth rate estimate is taken from here:
     // https://stackoverflow.com/a/23617678
     float tDelta = (time - m_lastMessageTime).toSec();

@@ -57,6 +57,14 @@ public:
             return m_time[(m_offset + BUFFER_SIZE - 1) % BUFFER_SIZE];
     }
 
+    float firstTime() const
+    {
+        if(m_size != BUFFER_SIZE)
+            return m_time[0];
+        else
+            return m_time[m_offset % BUFFER_SIZE];
+    }
+
     void reset(std::size_t rows);
     void addRow(unsigned int row);
     void push_back(float time, float* data);
