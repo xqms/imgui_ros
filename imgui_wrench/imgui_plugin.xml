@@ -1,0 +1,14 @@
+<library path="lib/libimgui_wrench">
+    <class name="imgui_wrench/GUI" type="imgui_wrench::GUI" base_class_type="imgui_ros::Window">
+        <description>
+            Plots geometry_msgs/Wrench(Stamped)
+        </description>
+        <qtgui>
+            <label>Wrench</label>
+            <statustip>Wrench</statustip>
+            <group>
+                <label>Visualization</label>
+            </group>
+        </qtgui>
+    </class>
+</library>
