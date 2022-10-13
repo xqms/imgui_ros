@@ -459,6 +459,8 @@ bool Decoder::Private::initializeDecoder(const std::string& encoding, int width,
         codecID = AV_CODEC_ID_MJPEG;
     else if(strcasecmp(encoding.c_str(), "rgb8; jpeg compressed bgr8") == 0)
         codecID = AV_CODEC_ID_MJPEG;
+    else if(strcasecmp(encoding.c_str(), "rgb8; jpeg compressed rgb8") == 0)
+        codecID = AV_CODEC_ID_MJPEG;
     else if(strcasecmp(encoding.c_str(), "rgba8; jpeg compressed bgr8") == 0)
         codecID = AV_CODEC_ID_MJPEG;
     else if(strcasecmp(encoding.c_str(), "jpeg") == 0)
