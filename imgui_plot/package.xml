@@ -1,0 +1,14 @@
+<package format="3">
+    <name>imgui_plot</name>
+    <description>Simple plotting widget</description>
+    <version>0.0.1</version>
+    <license>MIT</license>
+    <maintainer email="max.schwarz@ais.uni-bonn.de">Max Schwarz</maintainer>
+
+    <buildtool_depend>catkin</buildtool_depend>
+    <depend>imgui_ros</depend>
+
+    <export>
+        <imgui_ros plugin="${prefix}/imgui_plugin.xml" />
+    </export>
+</package>

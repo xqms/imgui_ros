@@ -1,0 +1,14 @@
+<library path="lib/libimgui_plot">
+    <class name="imgui_plot/GUI" type="imgui_plot::GUI" base_class_type="imgui_ros::Window">
+        <description>
+            Plots std_msgs
+        </description>
+        <qtgui>
+            <label>Plot (IMGUI)</label>
+            <statustip>Plot</statustip>
+            <group>
+                <label>Visualization</label>
+            </group>
+        </qtgui>
+    </class>
+</library>
