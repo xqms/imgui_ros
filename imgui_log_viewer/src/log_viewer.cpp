@@ -137,7 +137,7 @@ public:
             std::time_t time = stamp.sec;
             localtime_r(&time, &timeResult);
 
-            std::strftime(timeBuf, sizeof(timeBuf), "%R", &timeResult);
+            std::strftime(timeBuf, sizeof(timeBuf), "%T", &timeResult);
 
             std::uint32_t color = [&](){
                 switch(entry.msg->level)
