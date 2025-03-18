@@ -3,6 +3,7 @@
 
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
+#include <GL/gl.h>
 #endif
 
 #include <imgui_ros/window.h>
@@ -10,15 +11,20 @@
 #include <imgui_ros/imgui/imgui.h>
 #include <imgui_ros/imgui/imgui_internal.h>
 #include <imgui_ros/scrolling_buffer.h>
+#include <imgui_ros/nfd/nfd.h>
 
 #include <pluginlib/class_list_macros.hpp>
 
 #include <ros/callback_queue.h>
 #include <ros/names.h>
 
+#include <rosfmt/full.h>
+
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/CompressedImage.h>
 #include <sensor_msgs/CameraInfo.h>
+
+#include <png.h>
 
 #include "decoder.h"
 #include "cuda_decoder.h"
@@ -174,6 +180,12 @@ public:
 
                 ImGui::Text("%dx%d", m_frame->width(), m_frame->height());
 
+                if(ImGui::Button("Save image"))
+                {
+                    saveImage();
+                    ImGui::CloseCurrentPopup();
+                }
+
                 ImGui::EndPopup();
             }
 
@@ -248,7 +260,100 @@ public:
         }
     }
 
+    void saveImage()
+    {
+        if(!m_frame)
+            return;
+
+        glBindTexture(GL_TEXTURE_2D, m_frame->texture());
+
+        int size_x = 0;
+        int size_y = 0;
+
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &size_x);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &size_y);
+
+        ROSFMT_INFO("Capturing image with resolution {}x{}", size_x, size_y);
+
+        const std::size_t dataSize = size_x*size_y*3;
+
+        std::vector<uint8_t> data(dataSize);
+
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glPixelStorei(GL_PACK_ROW_LENGTH, size_x);
+        glPixelStorei(GL_PACK_IMAGE_HEIGHT, size_y);
+        glPixelStorei(GL_PACK_SKIP_PIXELS, 0);
+        glPixelStorei(GL_PACK_SKIP_ROWS, 0);
+        glPixelStorei(GL_PACK_SKIP_IMAGES, 0);
+
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, data.data());
+
+        saveImageData(data, size_x, size_y);
+    }
+
 private:
+
+    void saveImageData(const std::vector<uint8_t>& data, int size_x, int size_y)
+    {
+        nfdu8char_t* outPath = {};
+        nfdu8filteritem_t filters[] = { {"PNG image", "png"} };
+        nfdsavedialogu8args_t args = {};
+        args.filterList = filters;
+        args.filterCount = 1;
+
+        context()->setupNFDHandle(&args.parentWindow);
+
+        auto result = NFD_SaveDialogU8_With(&outPath, &args);
+        if(result == NFD_OKAY)
+        {
+            FILE* f = fopen(outPath, "w");
+            if(!f)
+            {
+                ROSFMT_ERROR("Could not write to {}", outPath);
+                NFD_FreePathU8(outPath);
+                return;
+            }
+
+            auto png = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+
+            if(!png)
+                throw std::runtime_error{"Could not create PNG writer"};
+
+            auto pngInfo = png_create_info_struct(png);
+            if(!pngInfo)
+            {
+                png_destroy_write_struct(&png, nullptr);
+                throw std::runtime_error{"Could not create PNG writer"};
+            }
+
+            if(setjmp(png_jmpbuf(png)))
+            {
+                png_destroy_write_struct(&png, &pngInfo);
+                throw std::runtime_error{"PNG error"};
+            }
+
+            png_init_io(png, f);
+
+            png_set_IHDR(png, pngInfo, size_x, size_y, 8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+
+            std::vector<const uint8_t*> rows(size_y);
+            for(int y = 0; y < size_y; ++y)
+                rows[y] = &data[y*size_x*3];
+
+            png_set_rows(png, pngInfo, const_cast<uint8_t**>(rows.data()));
+
+            png_write_png(png, pngInfo, PNG_TRANSFORM_IDENTITY, NULL);
+
+            png_destroy_write_struct(&png, &pngInfo);
+
+            fclose(f);
+
+            ROSFMT_INFO("Saved to {}", outPath);
+
+            NFD_FreePathU8(outPath);
+        }
+    }
+
     void subscribe()
     {
         m_sub.shutdown();

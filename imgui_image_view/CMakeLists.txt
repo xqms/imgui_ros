@@ -19,6 +19,7 @@ pkg_check_modules(avcodec IMPORTED_TARGET libavcodec)
 pkg_check_modules(avformat IMPORTED_TARGET libavformat)
 pkg_check_modules(avutil IMPORTED_TARGET libavutil)
 pkg_check_modules(swscale IMPORTED_TARGET libswscale)
+pkg_check_modules(libpng IMPORTED_TARGET libpng)
 
 set(OpenGL_GL_PREFERENCE GLVND)
 find_package(OpenGL)
@@ -42,6 +43,7 @@ target_link_libraries(imgui_image_view
     PkgConfig::avformat
     PkgConfig::avutil
     PkgConfig::swscale
+    PkgConfig::libpng
     OpenGL::GL
     OpenGL::GLX
     ${X11_LIBRARIES}
