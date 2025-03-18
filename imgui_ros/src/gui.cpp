@@ -14,6 +14,9 @@
 
 #include <GLFW/glfw3.h>
 
+#include "../contrib/nativefiledialog-extended/src/include/nfd.h"
+#include "../contrib/nativefiledialog-extended/src/include/nfd_glfw3.h"
+
 #include <fontconfig/fontconfig.h>
 
 #include <pluginlib/class_loader.hpp>
@@ -24,6 +27,7 @@
 
 #include <boost/program_options.hpp>
 
+#include "nfd_support.h"
 
 using ClassLoader = pluginlib::ClassLoader<imgui_ros::Window>;
 
@@ -109,8 +113,8 @@ ImFont* loadFont(const std::string& query, float relativeSize = 1.0f)
 class Window : public imgui_ros::Context
 {
 public:
-    explicit Window(ros::NodeHandle& nh)
-     : m_nh{nh}
+    explicit Window(ros::NodeHandle& nh, GLFWwindow* mainWindow)
+     : m_nh{nh}, m_mainWindow{mainWindow}
     {}
 
     virtual ~Window()
@@ -132,6 +136,11 @@ public:
         return ::loadFont(query, relativeSize);
     }
 
+    void setupNFDHandle(nfdwindowhandle_t* handle) override
+    {
+        nfd_support::setupWindowHandle(m_mainWindow, handle);
+    }
+
     std::string windowTitle = "plugin";
     std::uint64_t instanceID = 0;
 
@@ -143,6 +152,7 @@ public:
 
 private:
     ros::NodeHandle& m_nh;
+    GLFWwindow* m_mainWindow;
 };
 
 int main(int argc, char** argv)
@@ -245,6 +255,9 @@ int main(int argc, char** argv)
     // Implot
     ImPlot::CreateContext();
 
+    // NFD
+    NFD_Init();
+
     std::mt19937 mt(time(nullptr));
     std::uniform_int_distribution<std::uint64_t> instanceIDGenerator;
 
@@ -282,7 +295,7 @@ int main(int argc, char** argv)
                 return;
             }
 
-            auto w = std::make_unique<Window>(nh);
+            auto w = std::make_unique<Window>(nh, window);
             w->windowTitle = windowTitle;
             w->instanceID = id;
 
@@ -417,7 +430,7 @@ int main(int argc, char** argv)
                         // Load plugin
                         try
                         {
-                            auto w = std::make_unique<Window>(nh);
+                            auto w = std::make_unique<Window>(nh, window);
                             w->instanceID = instanceIDGenerator(mt);
                             w->plugin = loader.createInstance(cls);
                             w->pluginName = cls;
@@ -658,6 +671,7 @@ int main(int argc, char** argv)
     }
 
     // Cleanup
+    NFD_Quit();
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();

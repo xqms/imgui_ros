@@ -7,6 +7,8 @@
 #include <ros/subscriber.h>
 #include <ros/transport_hints.h>
 
+#include <imgui_ros/nfd/nfd.h>
+
 #include "box.h"
 
 struct ImFont;
@@ -27,6 +29,8 @@ public:
     { return Box<Msg>(nodeHandle(), topic, hints); }
 
     virtual ImFont* loadFont(const std::string& query, float relativeSize = 1.0f) = 0;
+
+    virtual void setupNFDHandle(nfdwindowhandle_t* handle) = 0;
 };
 
 }
