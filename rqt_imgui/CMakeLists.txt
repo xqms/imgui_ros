@@ -20,6 +20,7 @@ set(CMAKE_CXX_STANDARD 17)
 add_library(rqt_imgui_provider
     src/imgui_ros_plugin_provider.cpp
     src/widget.cpp
+    src/nfd_support.cpp
 )
 target_include_directories(rqt_imgui_provider PRIVATE
     ${catkin_INCLUDE_DIRS}

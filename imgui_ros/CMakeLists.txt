@@ -13,7 +13,19 @@ catkin_package(
     LIBRARIES imgui_ros
 )
 
-find_package(glfw3 REQUIRED)
+include(cmake/CPM.cmake)
+
+CPMAddPackage(
+    NAME glfw
+    VERSION 3.4
+    URL "https://github.com/glfw/glfw/releases/download/3.4/glfw-3.4.zip"
+    URL_HASH "SHA256=b5ec004b2712fd08e8861dc271428f048775200a2df719ccf575143ba749a3e9"
+    PATCHES contrib/glfw-wayland-fbsize.patch
+    OPTIONS
+      "GLFW_LIBRARY_TYPE STATIC"
+      "GLFW_INSTALL OFF"
+)
+
 set(OpenGL_GL_PREFERENCE GLVND)
 find_package(OpenGL REQUIRED)
 find_package(PkgConfig REQUIRED)

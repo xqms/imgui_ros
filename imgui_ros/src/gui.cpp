@@ -5,6 +5,7 @@
 
 #include <ros/ros.h>
 
+#include "imgui.h"
 #include "imgui_internal.h"
 
 #include "../contrib/imgui/backends/imgui_impl_glfw.h"
@@ -210,6 +211,8 @@ int main(int argc, char** argv)
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 
+    glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_TRUE);
+
     constexpr int MSAA = 4;
     glfwWindowHint(GLFW_SAMPLES, MSAA);
 
@@ -237,8 +240,7 @@ int main(int argc, char** argv)
 
     // Font
     float scaleX = 1.0f, scaleY = 1.0f;
-    GLFWmonitor* const monitor = glfwGetPrimaryMonitor();
-    glfwGetMonitorContentScale(monitor, &scaleX, &scaleY);
+    glfwGetWindowContentScale(window, &scaleX, &scaleY);
 
     g_fontDefaultHeight = std::round(scaleX * 16.0f);
 
@@ -368,7 +370,8 @@ int main(int argc, char** argv)
 
         if(windowWidth > 0)
         {
-            glfwSetWindowPos(window, windowX, windowY);
+            if(glfwGetPlatform() != GLFW_PLATFORM_WAYLAND)
+                glfwSetWindowPos(window, windowX, windowY);
             glfwSetWindowSize(window, windowWidth, windowHeight);
         }
     }
@@ -600,7 +603,14 @@ int main(int argc, char** argv)
                     std::ofstream out{configPath};
 
                     int x, y, width, height;
-                    glfwGetWindowPos(window, &x, &y);
+
+                    if(glfwGetPlatform() != GLFW_PLATFORM_WAYLAND)
+                        glfwGetWindowPos(window, &x, &y);
+                    else
+                    {
+                        x = 0;
+                        y = 0;
+                    }
                     glfwGetWindowSize(window, &width, &height);
                     out << "window=" << width << "x" << height << "+" << x << "+" << y << "\n";
                     out << "fullscreen=" << fullscreen << "\n\n";

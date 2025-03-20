@@ -304,7 +304,7 @@ Decoder::Private::Private(GLXContext glxContext)
         std::array<int, 10> devices;
         if(auto err = cudaGLGetDevices(&numDevices, devices.data(), devices.size(), cudaGLDeviceListAll))
         {
-            ROSFMT_INFO("Could not list CUDA devices: %s (%d). Falling back to software decoding.\n", cudaGetErrorString(err), err);
+            ROSFMT_INFO("Could not list CUDA devices: {} ({}). Falling back to software decoding.\n", cudaGetErrorString(err), err);
             return;
         }
 
