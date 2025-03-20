@@ -5,6 +5,7 @@
 
 #include <ros/ros.h>
 
+#include "imgui.h"
 #include "imgui_internal.h"
 
 #include "../contrib/imgui/backends/imgui_impl_glfw.h"
@@ -210,6 +211,8 @@ int main(int argc, char** argv)
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 
+    glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_TRUE);
+
     constexpr int MSAA = 4;
     glfwWindowHint(GLFW_SAMPLES, MSAA);
 
@@ -239,11 +242,32 @@ int main(int argc, char** argv)
     float scaleX = 1.0f, scaleY = 1.0f;
     GLFWmonitor* const monitor = glfwGetPrimaryMonitor();
     glfwGetMonitorContentScale(monitor, &scaleX, &scaleY);
+    fprintf(stderr, "monitor scale: %f\n", scaleX);
 
-    g_fontDefaultHeight = std::round(scaleX * 16.0f);
+    glfwGetWindowContentScale(window, &scaleX, &scaleY);
+    fprintf(stderr, "window scale: %f\n", scaleX);
+
+    int width, height;
+    glfwGetWindowSize(window, &width, &height);
+    fprintf(stderr, "window size: %d, %d\n", width, height);
+
+    int fbWidth, fbHeight;
+    glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
+    fprintf(stderr, "fb size: %d, %d\n", fbWidth, fbHeight);
+
+    float fontScale = static_cast<float>(width) / fbWidth;
+    float finalPixelSize = scaleX * 16.0;
+
+    g_fontDefaultHeight = std::round(finalPixelSize);
+
+    // g_fontDefaultHeight = std::round(scaleX * 16.0f);
+    // g_fontDefaultHeight = 16.0f;
+    fprintf(stderr, "=> font size: %f\n", g_fontDefaultHeight);
 
     // Default font
-    loadFont("Noto Sans");
+    auto font = loadFont("Noto Sans");
+    font->Scale = static_cast<float>(width) / fbWidth;
+    fprintf(stderr, "with scale: %f\n", font->Scale);
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
@@ -251,6 +275,22 @@ int main(int argc, char** argv)
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
+
+    // auto getWindowSize = [](ImGuiViewport* viewport) -> ImVec2 {
+    //     ImGui_ImplGlfw_ViewportData* vd = (ImGui_ImplGlfw_ViewportData*)viewport->PlatformUserData;
+    //     int w = 0, h = 0;
+    //     glfwGetWindowSize(vd->Window, &w, &h);
+    //     return ImVec2((float)w, (float)h);
+    // };
+    //
+    // ImGui::GetPlatformIO().Platform_GetWindowSize = &getWindowSize;
+
+    ImGui::GetIO().DisplayFramebufferScale.x = scaleX;
+    ImGui::GetIO().DisplayFramebufferScale.y = scaleY;
+    for(int i = 0; i < ImGui::GetPlatformIO().Monitors.Size; ++i)
+    {
+        ImGui::GetPlatformIO().Monitors.Data[i].DpiScale = scaleX;
+    }
 
     // Implot
     ImPlot::CreateContext();
@@ -401,6 +441,8 @@ int main(int argc, char** argv)
 
         ImGui::DockSpaceOverViewport();
 
+        auto imSize = ImGui::GetMainViewport()->Size;
+
         // Call ROS callbacks only after first frame to make sure everything is set up
         if(!firstFrame)
             ros::spinOnce();
@@ -467,6 +509,25 @@ int main(int argc, char** argv)
 
                     ImGui::EndMenu();
                 }
+
+                int width, height;
+                glfwGetFramebufferSize(window, &width, &height);
+                ImGui::Text("FB size: %dx%d", width, height);
+
+                glfwGetWindowSize(window, &width, &height);
+                ImGui::Text("GLFW window size: %dx%d", width, height);
+
+                float scale_x, scale_y;
+                glfwGetWindowContentScale(window, &scale_x, &scale_y);
+                ImGui::Text("scale: %f, %f", scale_x, scale_y);
+
+                ImGui::Text("imgui size: %fx%f", imSize.x, imSize.y);
+
+                auto view = ImGui::GetMainViewport();
+                ImGui::Text("imgui viewport: workSize: %fx%f, size: %fx%f",
+                    view->WorkSize.x, view->WorkSize.y,
+                    view->Size.x, view->Size.y
+                );
 
                 ImGui::EndMenu();
             }

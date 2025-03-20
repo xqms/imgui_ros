@@ -45,6 +45,8 @@ private:
     void setUpdateRate(float rate) override;
     ImFont* loadFont(const std::string& query, float relativeSize = 1.0f) override;
 
+    void setupNFDHandle(nfdwindowhandle_t* handle) override;
+
     void updateCursor();
 
     ros::NodeHandle& nodeHandle() override
