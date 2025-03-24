@@ -304,7 +304,11 @@ Decoder::Private::Private(GLXContext glxContext)
         std::array<int, 10> devices;
         if(auto err = cudaGLGetDevices(&numDevices, devices.data(), devices.size(), cudaGLDeviceListAll))
         {
-            ROSFMT_INFO("Could not list CUDA devices: {} ({}). Falling back to software decoding.\n", cudaGetErrorString(err), err);
+            auto vendor = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
+            auto renderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+            ROSFMT_INFO("Could not list CUDA devices: {} ({}). Your OpenGL renderer is {}/{}. Falling back to software decoding.\n",
+                cudaGetErrorString(err), err, vendor, renderer
+            );
             return;
         }
 
