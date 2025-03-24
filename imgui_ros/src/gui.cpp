@@ -502,7 +502,7 @@ int main(int argc, char** argv)
         }
 
         if(showDemoWindow)
-            ImGui::ShowDemoWindow();
+            ImGui::ShowDemoWindow(&showDemoWindow);
 
         char buf[1024];
         ImVec2 screenSize = ImGui::GetMainViewport()->Size;
