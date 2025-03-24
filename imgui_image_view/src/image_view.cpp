@@ -129,7 +129,7 @@ public:
             if(ImGui::ItemAdd(bb, id))
             {
                 window->DrawList->AddImageQuad(
-                    reinterpret_cast<void*>(m_frame->texture()),
+                    m_frame->texture(),
                     bb.GetTL(), bb.GetBL(), bb.GetBR(), bb.GetTR(),
                     uvCoords.topLeft, uvCoords.bottomLeft, uvCoords.bottomRight, uvCoords.topRight
                 );
