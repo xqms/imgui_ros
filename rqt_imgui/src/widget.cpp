@@ -19,6 +19,8 @@
 #include <ros/callback_queue.h>
 #include <ros/package.h>
 
+#include "nfd_support.h"
+
 using namespace imgui_ros;
 
 namespace
@@ -312,6 +314,14 @@ ImFont* Widget::loadFont(const std::string& query, float relativeSize)
     }
 
     return font;
+}
+
+void Widget::setupNFDHandle(nfdwindowhandle_t* handle)
+{
+    if(!window())
+        return;
+
+    nfd_support::setupWindowHandle(window(), handle);
 }
 
 }

@@ -1,0 +1,28 @@
+diff -r -u glfw-3.4-clean/src/wl_window.c glfw-3.4/src/wl_window.c
+--- glfw-3.4-clean/src/wl_window.c	2024-02-23 12:45:31.000000000 +0100
++++ glfw-3.4/src/wl_window.c	2025-03-24 10:05:55.276663611 +0100
+@@ -1438,8 +1438,10 @@
+     if (window->cursorMode == GLFW_CURSOR_DISABLED)
+         return;
+ 
+-    const double xpos = wl_fixed_to_double(sx);
+-    const double ypos = wl_fixed_to_double(sy);
++    double xscale = ((double)window->wl.fbWidth) / window->wl.width;
++    double yscale = ((double)window->wl.fbHeight) / window->wl.height;
++    const double xpos = wl_fixed_to_double(sx) * xscale;
++    const double ypos = wl_fixed_to_double(sy) * yscale;
+     window->wl.cursorPosX = xpos;
+     window->wl.cursorPosY = ypos;
+ 
+@@ -2251,9 +2253,9 @@
+ void _glfwGetWindowSizeWayland(_GLFWwindow* window, int* width, int* height)
+ {
+     if (width)
+-        *width = window->wl.width;
++        *width = window->wl.fbWidth;
+     if (height)
+-        *height = window->wl.height;
++        *height = window->wl.fbHeight;
+ }
+ 
+ void _glfwSetWindowSizeWayland(_GLFWwindow* window, int width, int height)
