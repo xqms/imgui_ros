@@ -46,6 +46,7 @@ target_link_libraries(imgui_image_view
     PkgConfig::libpng
     OpenGL::GL
     OpenGL::GLX
+    OpenGL::EGL
     ${X11_LIBRARIES}
 )
 target_link_options(imgui_image_view PRIVATE

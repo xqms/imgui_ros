@@ -9,6 +9,8 @@ extern "C"
 #include <GL/gl.h>
 #include <GL/glext.h>
 #include <GL/glx.h>
+
+#include <EGL/egl.h>
 }
 
 #include "cuda_decoder.h"
@@ -70,8 +72,8 @@ namespace
             glTextureParameteri(m_texture, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
             glTextureParameteri(m_texture, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
 
-            const float borderColor[3] = {0.5f, 0.5f, 0.5f};
-            glTextureParameterfv(m_texture, GL_TEXTURE_BORDER_COLOR, borderColor);
+            // const float borderColor[3] = {0.5f, 0.5f, 0.5f};
+            // glTextureParameterfv(m_texture, GL_TEXTURE_BORDER_COLOR, borderColor);
 
             glTextureParameteri(m_texture, GL_TEXTURE_MAX_LEVEL, 1);
 
@@ -220,6 +222,7 @@ class Decoder::Private
 {
 public:
     explicit Private(GLXContext glxContext);
+    explicit Private(EGLContext eglContext);
     ~Private();
 
     void returnBuffer(std::unique_ptr<Decoder::OutputFrameData>&& buffer);
@@ -252,6 +255,10 @@ private:
     Display* m_display = {};
     GLXPbuffer m_pbuffer = {};
     GLXContext m_context = {};
+
+    EGLDisplay m_eglDisplay = {};
+    EGLContext m_eglContext = EGL_NO_CONTEXT;
+    EGLSurface m_eglSurface = EGL_NO_SURFACE;
 
     cudaStream_t m_stream = {};
     CUcontext m_cudaCtx{};
@@ -366,6 +373,75 @@ Decoder::Private::Private(GLXContext glxContext)
     XFree(configs);
 }
 
+Decoder::Private::Private(EGLContext eglContext)
+{
+    [&](){
+        unsigned int numDevices = 0;
+        std::array<int, 10> devices;
+        if(auto err = cudaGLGetDevices(&numDevices, devices.data(), devices.size(), cudaGLDeviceListAll))
+        {
+            auto vendor = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
+            auto renderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+            ROSFMT_INFO("Could not list CUDA devices: {} ({}). Your OpenGL renderer is {}/{}. Falling back to software decoding.\n",
+                cudaGetErrorString(err), err, vendor, renderer
+            );
+            return;
+        }
+
+        if(numDevices == 0)
+        {
+            ROSFMT_INFO("No CUDA device matching your GLX context found. Falling back to software decoding.\n");
+            return;
+        }
+
+        m_cudaDevice = devices[0];
+        cudaSetDevice(m_cudaDevice);
+    }();
+
+    // Create output buffers
+    for(unsigned int i = 0; i < 5; ++i)
+    {
+        m_freeOutFrames.push_back(std::make_unique<OutputFrameData>(this));
+    }
+
+    m_eglDisplay = eglGetCurrentDisplay();
+
+    EGLint configAttrs[] = {
+        EGL_CONFORMANT, EGL_OPENGL_BIT,
+        EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+        EGL_NONE
+    };
+
+    EGLConfig config{};
+    EGLint numConfig = 0;
+    if(!eglChooseConfig(m_eglDisplay, configAttrs, &config, 1, &numConfig))
+    {
+        ROSFMT_ERROR("Could not choose EGL config");
+        std::abort();
+    }
+
+    EGLint attributes[] = {
+        EGL_CONTEXT_MAJOR_VERSION, 3,
+        EGL_CONTEXT_MINOR_VERSION, 2,
+        EGL_NONE
+    };
+
+    m_eglContext = eglCreateContext(m_eglDisplay, config, eglContext, attributes);
+    if(m_eglContext == EGL_NO_CONTEXT)
+    {
+        throw std::runtime_error{"Could not create EGL context"};
+    }
+
+    EGLint surfaceAttrs[] = {
+        EGL_WIDTH, 32,
+        EGL_HEIGHT, 32,
+        EGL_NONE
+    };
+    m_eglSurface = eglCreatePbufferSurface(m_eglDisplay, config, surfaceAttrs);
+    if(m_eglSurface == EGL_NO_SURFACE)
+        throw std::runtime_error{"Could not create EGL surface"};
+}
+
 Decoder::Private::~Private()
 {
     if(m_hwFramesCtx)
@@ -389,6 +465,11 @@ Decoder::Private::~Private()
         glXDestroyPbuffer(m_display, m_pbuffer);
     if(m_display)
         XCloseDisplay(m_display);
+
+    if(m_eglSurface)
+        eglDestroySurface(m_eglDisplay, m_eglSurface);
+    if(m_eglContext)
+        eglDestroyContext(m_eglDisplay, m_eglContext);
 }
 
 bool Decoder::Private::initializeDecoder(const std::string& encoding, int width, int height)
@@ -398,7 +479,10 @@ bool Decoder::Private::initializeDecoder(const std::string& encoding, int width,
 
     if(!m_contextCurrent)
     {
-        glXMakeContextCurrent(m_display, m_pbuffer, m_pbuffer, m_context);
+        if(m_eglContext != EGL_NO_CONTEXT)
+            eglMakeCurrent(m_eglDisplay, m_eglSurface, m_eglSurface, m_eglContext);
+        else
+            glXMakeContextCurrent(m_display, m_pbuffer, m_pbuffer, m_context);
         m_contextCurrent = true;
     }
 
@@ -562,6 +646,15 @@ void Decoder::Private::pushFrame(AVFrame* frame, AVColorSpace colorSpace, AVColo
 {
     int dataWidth = frame->width;
     int dataHeight = frame->height;
+
+    if(m_eglContext != EGL_NO_CONTEXT)
+    {
+        if(!eglMakeCurrent(m_eglDisplay, m_eglSurface, m_eglSurface, m_eglContext))
+        {
+            fprintf(stderr, "EGL error: %d\n", eglGetError());
+            throw std::runtime_error{"Could not make EGL context current"};
+        }
+    }
 
     // Obtain a texture we can copy to
     // NOTE: We cannot get rid of this copy, since it changes the
@@ -968,6 +1061,10 @@ ros::WallDuration Decoder::OutputFrame::timeSpentDecoding() const
 Decoder::Decoder()
  : m_d{std::make_unique<Private>(glXGetCurrentContext())}
 {
+    if(eglGetCurrentContext() != EGL_NO_CONTEXT)
+        m_d = std::make_unique<Private>(eglGetCurrentContext());
+    else
+        m_d = std::make_unique<Private>(glXGetCurrentContext());
 }
 
 Decoder::~Decoder() = default;
