@@ -3,7 +3,10 @@
 
 #include <imgui_ros/window.h>
 
-#include <ros/ros.h>
+#include <rclcpp/node.hpp>
+#include <rclcpp/executors.hpp>
+
+#include <ament_index_cpp/get_package_share_directory.hpp>
 
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -25,6 +28,7 @@
 #include <random>
 #include <filesystem>
 #include <regex>
+#include <fstream>
 
 #include <boost/program_options.hpp>
 
@@ -94,7 +98,7 @@ ImFont* loadFont(const std::string& query, float relativeSize = 1.0f)
         font = ImGui::GetIO().Fonts->AddFontFromFileTTF(fontPath.c_str(), height, NULL, NULL);
 
         // Add symbol font
-        auto symbolPath = fs::path(ros::package::getPath("imgui_ros")) / fs::path("contrib") / fs::path("fonts") / fs::path("fa-solid-900.ttf");
+        auto symbolPath = fs::path(ament_index_cpp::get_package_share_directory("imgui_ros")) / fs::path("contrib") / fs::path("fonts") / fs::path("fa-solid-900.ttf");
         if(fs::exists(symbolPath))
         {
             ImFontConfig cfg{};
@@ -114,15 +118,15 @@ ImFont* loadFont(const std::string& query, float relativeSize = 1.0f)
 class Window : public imgui_ros::Context
 {
 public:
-    explicit Window(ros::NodeHandle& nh, GLFWwindow* mainWindow)
-     : m_nh{nh}, m_mainWindow{mainWindow}
+    explicit Window(rclcpp::Node::SharedPtr& node, GLFWwindow* mainWindow)
+     : m_node{node}, m_mainWindow{mainWindow}
     {}
 
     virtual ~Window()
     {}
 
-    ros::NodeHandle& nodeHandle() override
-    { return m_nh; }
+    const rclcpp::Node::SharedPtr& node() override
+    { return m_node; }
 
     void setUpdateRate(float updateRate) override
     {}
@@ -147,12 +151,12 @@ public:
 
     std::string pluginName;
 
-    boost::shared_ptr<imgui_ros::Window> plugin;
+    std::shared_ptr<imgui_ros::Window> plugin;
 
     imgui_ros::Settings savedState;
 
 private:
-    ros::NodeHandle& m_nh;
+    rclcpp::Node::SharedPtr m_node;
     GLFWwindow* m_mainWindow;
 };
 
@@ -161,8 +165,8 @@ int main(int argc, char** argv)
     namespace po = boost::program_options;
     namespace fs = std::filesystem;
 
-    ros::init(argc, argv, "gui", ros::init_options::AnonymousName);
-    ros::NodeHandle nh;
+    rclcpp::init(argc, argv);
+    auto node = std::make_shared<rclcpp::Node>("gui");
 
     po::options_description desc("Options");
 
@@ -293,19 +297,19 @@ int main(int argc, char** argv)
         auto instantiate = [&](){
             if(plugin.empty())
             {
-                ROS_ERROR("Window '%s' does not contain a plugin key, ignoring plugin!", windowTitle.c_str());
+                RCLCPP_ERROR(node->get_logger(), "Window '%s' does not contain a plugin key, ignoring plugin!", windowTitle.c_str());
                 return;
             }
 
-            auto w = std::make_unique<Window>(nh, window);
+            auto w = std::make_unique<Window>(node, window);
             w->windowTitle = windowTitle;
             w->instanceID = id;
 
             w->pluginName = plugin;
-            w->plugin = loader.createInstance(plugin);
+            w->plugin = loader.createSharedInstance(plugin);
             if(!w->plugin)
             {
-                ROS_ERROR("Could not load plugin '%s', ignoring", plugin.c_str());
+                RCLCPP_ERROR(node->get_logger(), "Could not load plugin '%s', ignoring", plugin.c_str());
                 return;
             }
 
@@ -316,7 +320,7 @@ int main(int argc, char** argv)
             w->plugin->setState(settings);
             w->savedState = settings;
 
-            ROS_DEBUG("Loaded window '%s##%lu'", w->windowTitle.c_str(), w->instanceID);
+            RCLCPP_DEBUG(node->get_logger(), "Loaded window '%s##%lu'", w->windowTitle.c_str(), w->instanceID);
 
             windows.push_back(std::move(w));
 
@@ -360,7 +364,7 @@ int main(int argc, char** argv)
             }
             else
             {
-                ROS_ERROR("Invalid settings line: '%s'", line.c_str());
+                RCLCPP_ERROR(node->get_logger(), "Invalid settings line: '%s'", line.c_str());
                 std::exit(1);
             }
         }
@@ -381,7 +385,7 @@ int main(int argc, char** argv)
     bool showDemoWindow = false;
     bool firstFrame = true;
 
-    while(ros::ok())
+    while(rclcpp::ok())
     {
         // Poll and handle events (inputs, window resize, etc.)
         // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
@@ -393,7 +397,7 @@ int main(int argc, char** argv)
         // Save CPU when we are minimized
         if(glfwGetWindowAttrib(window, GLFW_ICONIFIED))
         {
-            ros::WallDuration(0.1).sleep();
+            usleep(100 * 1000);
             continue;
         }
 
@@ -406,7 +410,7 @@ int main(int argc, char** argv)
 
         // Call ROS callbacks only after first frame to make sure everything is set up
         if(!firstFrame)
-            ros::spinOnce();
+            rclcpp::spin_some(node);
 
         // We cannot initialize a new plugin between ImGui::NewFrame / EndFrame, since it may load fonts and otherwise alter ImGui context.
         // Instead, keep the pointer here and initialize it after the EndFrame().
@@ -433,9 +437,9 @@ int main(int argc, char** argv)
                         // Load plugin
                         try
                         {
-                            auto w = std::make_unique<Window>(nh, window);
+                            auto w = std::make_unique<Window>(node, window);
                             w->instanceID = instanceIDGenerator(mt);
-                            w->plugin = loader.createInstance(cls);
+                            w->plugin = loader.createSharedInstance(cls);
                             w->pluginName = cls;
                             w->windowTitle = cls;
 
@@ -449,7 +453,7 @@ int main(int argc, char** argv)
                         }
                         catch(pluginlib::PluginlibException& e)
                         {
-                            ROS_ERROR("Could not load plugin %s: %s",
+                            RCLCPP_ERROR(node->get_logger(), "Could not load plugin %s: %s",
                                 cls.c_str(), e.what()
                             );
                             pluginError = true;

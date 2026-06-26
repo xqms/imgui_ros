@@ -2,16 +2,19 @@
 cmake_minimum_required(VERSION 3.10)
 project(imgui_ros)
 
-find_package(catkin REQUIRED COMPONENTS
-    roscpp
-    pluginlib
-)
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(pluginlib REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 
-catkin_package(
-    CATKIN_DEPENDS pluginlib roscpp
-    CFG_EXTRAS imgui_ros.cmake
-    LIBRARIES imgui_ros
-)
+cmake_policy(SET CMP0167 NEW)
+find_package(Boost COMPONENTS program_options REQUIRED)
+
+# catkin_package(
+#     CATKIN_DEPENDS pluginlib roscpp
+#     CFG_EXTRAS imgui_ros.cmake
+#     LIBRARIES imgui_ros
+# )
 
 include(cmake/CPM.cmake)
 
@@ -33,16 +36,16 @@ pkg_check_modules(FontConfig fontconfig IMPORTED_TARGET)
 pkg_check_modules(freetype freetype2 IMPORTED_TARGET)
 pkg_check_modules(DBus dbus-1 IMPORTED_TARGET)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 execute_process(
-    COMMAND cmake -E make_directory "${CATKIN_DEVEL_PREFIX}/include/imgui_ros"
-    COMMAND cmake -E create_symlink "${CMAKE_CURRENT_SOURCE_DIR}/contrib/imgui" "${CATKIN_DEVEL_PREFIX}/include/imgui_ros/imgui"
-    COMMAND cmake -E create_symlink "${CMAKE_CURRENT_SOURCE_DIR}/contrib/implot" "${CATKIN_DEVEL_PREFIX}/include/imgui_ros/implot"
-    COMMAND cmake -E create_symlink "${CMAKE_CURRENT_SOURCE_DIR}/contrib/nativefiledialog-extended/src/include" "${CATKIN_DEVEL_PREFIX}/include/imgui_ros/nfd"
+    COMMAND cmake -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/include/imgui_ros"
+    COMMAND cmake -E create_symlink "${CMAKE_CURRENT_SOURCE_DIR}/contrib/imgui" "${CMAKE_CURRENT_BINARY_DIR}/include/imgui_ros/imgui"
+    COMMAND cmake -E create_symlink "${CMAKE_CURRENT_SOURCE_DIR}/contrib/implot" "${CMAKE_CURRENT_BINARY_DIR}/include/imgui_ros/implot"
+    COMMAND cmake -E create_symlink "${CMAKE_CURRENT_SOURCE_DIR}/contrib/nativefiledialog-extended/src/include" "${CMAKE_CURRENT_BINARY_DIR}/include/imgui_ros/nfd"
 )
 
-add_library(imgui_ros
+add_library(imgui_ros SHARED
     # ImGui
     contrib/imgui/imgui.cpp
     contrib/imgui/imgui_demo.cpp
@@ -68,20 +71,22 @@ target_compile_definitions(imgui_ros PUBLIC
     IMGUI_ENABLE_FREETYPE=1
 )
 target_include_directories(imgui_ros PUBLIC
-    include
-    contrib/imgui
-    contrib/implot
-    contrib/nativefiledialog-extended/src/include
-    ${CATKIN_DEVEL_PREFIX}/include
-    ${catkin_INCLUDE_DIRS}
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
+    $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/contrib/imgui>
+    $<INSTALL_INTERFACE:include/${PROJECT_NAME}/imgui>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/contrib/implot>
+    $<INSTALL_INTERFACE:include/${PROJECT_NAME}/implot>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/contrib/nativefiledialog-extended/src/include>
 )
 target_link_libraries(imgui_ros PUBLIC
     dl
-    ${roscpp_LIBRARIES}
-    PkgConfig::freetype
+    rclcpp::rclcpp
 )
 target_link_libraries(imgui_ros PRIVATE
     PkgConfig::DBus
+    PkgConfig::freetype
 )
 target_link_options(imgui_ros PRIVATE
     "-Wl,--no-undefined"
@@ -102,50 +107,60 @@ target_link_libraries(gui
     glfw
     OpenGL::OpenGL
     PkgConfig::FontConfig
-    ${catkin_LIBRARIES}
+    rclcpp::rclcpp
+    pluginlib::pluginlib
+    ament_index_cpp::ament_index_cpp
+    Boost::program_options
 )
 
 
-install(TARGETS imgui_ros gui
-    RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-    LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+install(TARGETS gui
+    RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
-install(FILES
-    include/imgui_ros/box.h
-    include/imgui_ros/context.h
-    include/imgui_ros/icons.h
-    include/imgui_ros/math.h
-    include/imgui_ros/scrolling_buffer.h
-    include/imgui_ros/topic_selector.h
-    include/imgui_ros/window.h
-    DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}/
+install(
+    DIRECTORY include/
+    DESTINATION include/${PROJECT_NAME}
 )
+
+install(
+    TARGETS imgui_ros
+    EXPORT export_${PROJECT_NAME}
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin
+)
+
+ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
+ament_export_dependencies(rclcpp)
 
 install(FILES
     contrib/imgui/imgui.h
     contrib/imgui/imgui_internal.h
     contrib/imgui/imstb_textedit.h
     contrib/imgui/imconfig.h
-    DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}/imgui/
+    DESTINATION include/${PROJECT_NAME}/imgui_ros/imgui/
 )
 
 install(FILES
     contrib/imgui/backends/imgui_impl_opengl3.h
-    DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}/imgui/backends/
+    DESTINATION include/${PROJECT_NAME}/imgui_ros/imgui/backends/
 )
 
 install(FILES
     contrib/implot/implot.h
-    DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}/implot/
+    DESTINATION include/${PROJECT_NAME}/imgui_ros/implot/
 )
 
 install(FILES
     contrib/nativefiledialog-extended/src/include/nfd.h
-    DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}/nfd/
+    DESTINATION include/${PROJECT_NAME}/imgui_ros/nfd/
 )
 
 install(FILES
     contrib/fonts/fa-solid-900.ttf
-    DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/contrib/fonts/
+    DESTINATION share/${PROJECT_NAME}/contrib/fonts/
 )
+
+ament_package()
+

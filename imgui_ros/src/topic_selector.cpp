@@ -3,15 +3,17 @@
 
 #include <imgui_ros/topic_selector.h>
 
+#include <ranges>
+
 #include <imgui.h>
 
-#include <ros/master.h>
+#include <rclcpp/node.hpp>
 
 namespace imgui_ros
 {
 
-TopicSelector::TopicSelector(const std::set<std::string>& types) noexcept
- : m_types{types}
+TopicSelector::TopicSelector(const rclcpp::Node::SharedPtr& node, const std::set<std::string>& types) noexcept
+ : m_node{node}, m_types{types}
 {
 }
 
@@ -71,14 +73,23 @@ bool TopicSelector::draw(const char* label, std::string* selectedTopic, std::str
 
 void TopicSelector::updateTopics()
 {
-    std::vector<ros::master::TopicInfo> topics;
-    ros::master::getTopics(topics);
+    auto info = m_node->get_topic_names_and_types();
 
     m_topics.clear();
-    for(auto& topic : topics)
+    for(auto& topic : info)
     {
-        if(m_types.count(topic.datatype) != 0)
-            m_topics.push_back({topic.name, topic.datatype});
+        auto type = [&]() -> std::optional<std::string> {
+            for(auto& t : topic.second)
+            {
+                if(m_types.count(t) != 0)
+                    return t;
+            }
+            return {};
+        }();
+        if(!type)
+            continue;
+
+        m_topics.push_back({topic.first, *type});
     }
     std::sort(m_topics.begin(), m_topics.end());
 }

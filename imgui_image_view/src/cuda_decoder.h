@@ -6,8 +6,10 @@
 
 #if CUDA_DECODER
 
-#include <sensor_msgs/CompressedImage.h>
-#include <sensor_msgs/Image.h>
+#include <sensor_msgs/msg/compressed_image.hpp>
+#include <sensor_msgs/msg/image.hpp>
+
+#include <rclcpp/node.hpp>
 
 #include <GL/gl.h>
 
@@ -31,9 +33,8 @@ public:
         OutputFrame(const OutputFrame&) = delete;
         OutputFrame& operator=(const OutputFrame&) = delete;
 
-        const sensor_msgs::CompressedImageConstPtr& message() const;
+        const sensor_msgs::msg::CompressedImage::ConstSharedPtr& message() const;
         GLuint texture();
-        ros::WallDuration timeSpentDecoding() const;
         int width() const;
         int height() const;
 
@@ -41,7 +42,7 @@ public:
         std::unique_ptr<OutputFrameData> m_frameData;
     };
 
-    explicit Decoder();
+    explicit Decoder(const rclcpp::Node::SharedPtr& node);
     ~Decoder();
 
     Decoder(const Decoder&) = delete;
@@ -52,8 +53,8 @@ public:
      *
      * This method is thread-safe.
      **/
-    bool addMessage(const sensor_msgs::CompressedImageConstPtr& img);
-    bool addMessage(const sensor_msgs::ImageConstPtr& img);
+    bool addMessage(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& img);
+    bool addMessage(const sensor_msgs::msg::Image::ConstSharedPtr& img);
 
     /**
      * @brief Get output frame

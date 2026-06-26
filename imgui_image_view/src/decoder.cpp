@@ -3,6 +3,8 @@
 
 #if !CUDA_DECODER
 
+#include <rosfmt/full.hpp>
+
 extern "C"
 {
 #define GL_GLEXT_PROTOTYPES
@@ -28,7 +30,7 @@ extern "C"
 #include <fstream>
 #include <utility>
 
-#include <rosfmt/full.h>
+using namespace std::chrono_literals;
 
 namespace
 {
@@ -126,21 +128,20 @@ public:
     int height = 0;
     GLsync fence{};
 
-    sensor_msgs::CompressedImageConstPtr msg;
-    sensor_msgs::ImageConstPtr uncompressed;
-    ros::WallDuration timeSpentDecoding;
+    sensor_msgs::msg::CompressedImage::ConstSharedPtr msg;
+    sensor_msgs::msg::Image::ConstSharedPtr uncompressed;
 };
 
 class Decoder::Private
 {
 public:
-    explicit Private(GLXContext glxContext);
+    explicit Private(const rclcpp::Node::SharedPtr& node, GLXContext glxContext);
     ~Private();
 
     void returnBuffer(std::unique_ptr<Decoder::OutputFrameData>&& buffer);
 
-    bool addMessage(const sensor_msgs::CompressedImageConstPtr& msg);
-    bool addMessage(const sensor_msgs::ImageConstPtr& msg);
+    bool addMessage(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg);
+    bool addMessage(const sensor_msgs::msg::Image::ConstSharedPtr& msg);
     std::optional<OutputFrame> getNewFrame();
 
     void flush();
@@ -151,6 +152,8 @@ private:
     bool initializeDecoder(const std::string& encoding, int width = -1, int height = -1);
     void decodePacket(AVPacket* packet);
     void pushFrame(AVFrame* frame, AVColorSpace colorSpace = AVCOL_SPC_RGB, AVColorRange colorRange = AVCOL_RANGE_UNSPECIFIED);
+
+    rclcpp::Node::SharedPtr m_node;
 
     std::deque<Task> m_outputQueue;
 
@@ -197,7 +200,8 @@ void Decoder::OutputFrameData::prepare(int requestedWidth, int requestedHeight)
 }
 
 
-Decoder::Private::Private(GLXContext glxContext)
+Decoder::Private::Private(const rclcpp::Node::SharedPtr& node, GLXContext glxContext)
+ : m_node{node}
 {
     // Create output buffers
     for(unsigned int i = 0; i < 5; ++i)
@@ -307,7 +311,7 @@ bool Decoder::Private::initializeDecoder(const std::string& encoding, int width,
         return false;
     }
 
-    AVCodec* codec = avcodec_find_decoder(codecID);
+    const AVCodec* codec = avcodec_find_decoder(codecID);
     if(!codec)
         throw std::runtime_error{"Could not find decoder"};
 
@@ -336,10 +340,10 @@ bool Decoder::Private::initializeDecoder(const std::string& encoding, int width,
     if(avcodec_open2(m_codecCtx, codec, nullptr) < 0)
         throw std::runtime_error{"Could not open codec"};
 
-    ROSFMT_INFO("Initialized codec with settings: pix_fmt={}, sw_pix_fmt={}, color_range={}",
+    ROSFMT_INFO(m_node, "Initialized codec with settings: pix_fmt={}, sw_pix_fmt={}, color_range={}",
         safePixelFormatName(m_codecCtx->pix_fmt),
         safePixelFormatName(m_codecCtx->sw_pix_fmt),
-        m_codecCtx->color_range
+        (int)m_codecCtx->color_range
     );
 
     m_codecName = encoding;
@@ -351,7 +355,7 @@ void Decoder::Private::decodePacket(AVPacket* packet)
 {
     if(avcodec_send_packet(m_codecCtx, packet) < 0)
     {
-        ROSFMT_WARN_NAMED("decoder", "Could not send packet to decoder");
+        ROSFMT_WARN(m_node, "Could not send packet to decoder");
         return;
     }
 
@@ -365,7 +369,7 @@ void Decoder::Private::decodePacket(AVPacket* packet)
             return;
         else if(ret < 0)
         {
-            ROSFMT_WARN_NAMED("decoder", "Error during decoding");
+            ROSFMT_WARN(m_node, "Error during decoding");
             return;
         }
 
@@ -390,7 +394,7 @@ void Decoder::Private::pushFrame(AVFrame* frame, AVColorSpace colorSpace, AVColo
 
         while(!m_shutdown && m_freeOutFrames.empty())
         {
-            ROSFMT_DEBUG_THROTTLE_NAMED(1.0, "decoder", "Decoder has to wait for free output frames");
+            ROSFMT_DEBUG_THROTTLE(m_node, 1s, "Decoder has to wait for free output frames");
             m_freeOutCond.wait(lock);
         }
 
@@ -407,7 +411,7 @@ void Decoder::Private::pushFrame(AVFrame* frame, AVColorSpace colorSpace, AVColo
 
     if(frame->format == AV_PIX_FMT_RGB32 || frame->format == AV_PIX_FMT_RGBA || frame->format == AV_PIX_FMT_RGB0)
     {
-        ROSFMT_INFO("no conversion");
+        ROSFMT_INFO(m_node, "no conversion");
     }
     else
     {
@@ -439,7 +443,7 @@ void Decoder::Private::pushFrame(AVFrame* frame, AVColorSpace colorSpace, AVColo
 
             if(sws_init_context(m_swsContext, nullptr, nullptr))
             {
-                ROSFMT_ERROR("Could not create libswscale context for conversion from {} to RGBA",
+                ROSFMT_ERROR(m_node, "Could not create libswscale context for conversion from {} to RGBA",
                     safePixelFormatName(static_cast<AVPixelFormat>(frame->format))
                 );
                 return;
@@ -468,13 +472,13 @@ void Decoder::Private::pushFrame(AVFrame* frame, AVColorSpace colorSpace, AVColo
         targetFrame->format = AV_PIX_FMT_RGBA;
         if(auto err = av_frame_get_buffer(targetFrame, 0))
         {
-            ROSFMT_ERROR("Could not allocate buffer: {}", err);
+            ROSFMT_ERROR(m_node, "Could not allocate buffer: {}", err);
             return;
         }
 
         if(sws_scale(m_swsContext, frame->data, frame->linesize, 0, frame->height, targetFrame->data, targetFrame->linesize) <= 0)
         {
-            ROSFMT_ERROR("Could not convert pixel format using swscale");
+            ROSFMT_ERROR(m_node, "Could not convert pixel format using swscale");
             return;
         }
 
@@ -494,6 +498,7 @@ void Decoder::Private::pushFrame(AVFrame* frame, AVColorSpace colorSpace, AVColo
 
     // Provide sync fence
     frameData->fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    ROSFMT_INFO(m_node, "Create fence: {}", (void*)frameData->fence);
     glFlush();
 
     // Mark as finished
@@ -518,7 +523,7 @@ void Decoder::Private::returnBuffer(std::unique_ptr<Decoder::OutputFrameData>&& 
     m_freeOutCond.notify_one();
 }
 
-bool Decoder::Private::addMessage(const sensor_msgs::CompressedImageConstPtr& msg)
+bool Decoder::Private::addMessage(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg)
 {
     if(!initializeDecoder(msg->format))
         return false;
@@ -537,7 +542,7 @@ bool Decoder::Private::addMessage(const sensor_msgs::CompressedImageConstPtr& ms
 
         if(ret < 0)
         {
-            ROSFMT_WARN_NAMED("decoder", "Error during packet parsing");
+            ROSFMT_WARN(m_node, "Error during packet parsing");
             break;
         }
 
@@ -553,7 +558,7 @@ bool Decoder::Private::addMessage(const sensor_msgs::CompressedImageConstPtr& ms
     return true;
 }
 
-bool Decoder::Private::addMessage(const sensor_msgs::ImageConstPtr& msg)
+bool Decoder::Private::addMessage(const sensor_msgs::msg::Image::ConstSharedPtr& msg)
 {
     if(!initializeDecoder({}, msg->width, msg->height))
         return false;
@@ -567,7 +572,7 @@ bool Decoder::Private::addMessage(const sensor_msgs::ImageConstPtr& msg)
         format = AV_PIX_FMT_GRAY8;
     else
     {
-        ROSFMT_WARN_THROTTLE(1.0, "Received image with unsupported encoding '{}', ignoring", msg->encoding);
+        ROSFMT_WARN_THROTTLE(m_node, 1s, "Received image with unsupported encoding '{}', ignoring", msg->encoding);
         return false;
     }
 
@@ -617,13 +622,14 @@ std::optional<Decoder::OutputFrame> Decoder::Private::getNewFrame()
     // Task is done, but the final GL transfer from buffer into texture might
     // still be running.
 
+    ROSFMT_INFO(m_node, "Wait: {}", (void*)task.frameData->fence);
     GLenum syncStatus = glClientWaitSync(task.frameData->fence, 0, 0);
     if(syncStatus == GL_TIMEOUT_EXPIRED)
         return {}; // Keep task in queue
 
     if(syncStatus != GL_ALREADY_SIGNALED && syncStatus != GL_CONDITION_SATISFIED)
     {
-        ROSFMT_ERROR("glClientWaitSync() error");
+        ROSFMT_ERROR(m_node, "glClientWaitSync() error: 0x{:X}", (int)syncStatus);
         std::abort();
     }
 
@@ -663,7 +669,7 @@ Decoder::OutputFrame::~OutputFrame()
     if(m_frameData)
         m_frameData->decoder->returnBuffer(std::move(m_frameData));
 
-    m_frameData.release();
+    // m_frameData.release();
 }
 
 GLuint Decoder::OutputFrame::texture()
@@ -681,15 +687,11 @@ int Decoder::OutputFrame::height() const
     return m_frameData->height;
 }
 
-const sensor_msgs::CompressedImageConstPtr& Decoder::OutputFrame::message() const
+const sensor_msgs::msg::CompressedImage::ConstSharedPtr& Decoder::OutputFrame::message() const
 {
     return m_frameData->msg;
 }
 
-ros::WallDuration Decoder::OutputFrame::timeSpentDecoding() const
-{
-    return m_frameData->timeSpentDecoding;
-}
 
 
 
@@ -698,20 +700,19 @@ ros::WallDuration Decoder::OutputFrame::timeSpentDecoding() const
 
 
 
-
-Decoder::Decoder()
- : m_d{std::make_unique<Private>(glXGetCurrentContext())}
+Decoder::Decoder(const rclcpp::Node::SharedPtr& node)
+ : m_d{std::make_unique<Private>(node, glXGetCurrentContext())}
 {
 }
 
 Decoder::~Decoder() = default;
 
-bool Decoder::addMessage(const sensor_msgs::CompressedImageConstPtr& img)
+bool Decoder::addMessage(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& img)
 {
     return m_d->addMessage(img);
 }
 
-bool Decoder::addMessage(const sensor_msgs::ImageConstPtr& img)
+bool Decoder::addMessage(const sensor_msgs::msg::Image::ConstSharedPtr& img)
 {
     return m_d->addMessage(img);
 }

@@ -8,17 +8,19 @@
 #include <set>
 #include <vector>
 
+#include <rclcpp/node.hpp>
+
 namespace imgui_ros
 {
 
 class TopicSelector
 {
 public:
-    explicit TopicSelector(const std::initializer_list<std::string>& types) noexcept
-     : TopicSelector(std::set<std::string>{types})
+    explicit TopicSelector(const rclcpp::Node::SharedPtr& node, const std::initializer_list<std::string>& types) noexcept
+     : TopicSelector(node, std::set<std::string>{types})
     {}
 
-    explicit TopicSelector(const std::set<std::string>& types) noexcept;
+    explicit TopicSelector(const rclcpp::Node::SharedPtr& node, const std::set<std::string>& types) noexcept;
     ~TopicSelector() noexcept;
 
     bool draw(const char* label, std::string* selectedTopic, std::string* selectedType = nullptr);
@@ -36,6 +38,7 @@ private:
         }
     };
 
+    rclcpp::Node::SharedPtr m_node;
     std::vector<TopicInfo> m_topics;
     std::set<std::string> m_types;
 };

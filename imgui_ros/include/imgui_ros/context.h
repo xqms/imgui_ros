@@ -4,8 +4,9 @@
 #ifndef IMGUI_ROS_CONTEXT_H
 #define IMGUI_ROS_CONTEXT_H
 
-#include <ros/subscriber.h>
-#include <ros/transport_hints.h>
+#include <rclcpp/node.hpp>
+#include <rclcpp/subscription.hpp>
+#include <rclcpp/qos.hpp>
 
 #include <imgui_ros/nfd/nfd.h>
 
@@ -22,11 +23,11 @@ public:
     virtual void setWindowTitle(const std::string& title) = 0;
     virtual void setUpdateRate(float updateRate) = 0;
 
-    virtual ros::NodeHandle& nodeHandle() = 0;
+    virtual const rclcpp::Node::SharedPtr& node() = 0;
 
     template<class Msg>
-    Box<Msg> subscribeBox(const std::string& topic, const ros::TransportHints& hints = {})
-    { return Box<Msg>(nodeHandle(), topic, hints); }
+    Box<Msg> subscribeBox(const std::string& topic, const rclcpp::QoS qos = {})
+    { return Box<Msg>(node(), topic, qos); }
 
     virtual ImFont* loadFont(const std::string& query, float relativeSize = 1.0f) = 0;
 

@@ -4,7 +4,7 @@
 #ifndef IMGUI_ROS_BOX_H
 #define IMGUI_ROS_BOX_H
 
-#include <ros/node_handle.h>
+#include <rclcpp/node.hpp>
 
 namespace imgui_ros
 {
@@ -16,12 +16,12 @@ public:
     Box()
     {}
 
-    explicit Box(ros::NodeHandle& nh, const std::string& topic, const ros::TransportHints& hints = {})
+    explicit Box(const rclcpp::Node::SharedPtr& nh, const std::string& topic, const rclcpp::QoS& hints = {})
      : m_nh{nh}
      , m_topic{topic}
      , m_hints{hints}
     {
-        m_sub = m_nh.subscribe(topic, 1, &Box<Msg>::handleData, this, hints);
+        m_sub = m_nh->create_subscription<Msg>(topic, hints, [&](const std::shared_ptr<Msg>& msg){ this->handleData(msg); });
     }
 
     Box(const Box& other)
@@ -36,14 +36,14 @@ public:
         m_hints = other.m_hints;
 
         if(!m_topic.empty())
-            m_sub = m_nh.subscribe(m_topic, 1, &Box<Msg>::handleData, this, m_hints);
+            m_sub = m_nh->create_subscription(m_topic, m_hints, [&](const std::shared_ptr<Msg>& msg){ this->handleData(msg); });
         else
             m_sub = {};
 
         return *this;
     }
 
-    boost::shared_ptr<const Msg> message() const
+    std::shared_ptr<const Msg> message() const
     { return m_msg; }
 
     operator bool() const
@@ -53,16 +53,16 @@ public:
     { return m_msg.get(); }
 
 private:
-    void handleData(const boost::shared_ptr<const Msg>& msg)
+    void handleData(const std::shared_ptr<const Msg>& msg)
     {
         m_msg = msg;
     }
 
-    ros::NodeHandle m_nh;
+    rclcpp::Node::SharedPtr m_nh;
     std::string m_topic;
-    ros::TransportHints m_hints;
-    ros::Subscriber m_sub;
-    boost::shared_ptr<const Msg> m_msg;
+    rclcpp::QoS m_hints;
+    typename rclcpp::Subscription<Msg>::SharedPtr m_sub;
+    std::shared_ptr<const Msg> m_msg;
 };
 
 }

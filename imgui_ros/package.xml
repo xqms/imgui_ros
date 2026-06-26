@@ -5,11 +5,16 @@
     <license>MIT</license>
     <maintainer email="max.schwarz@ais.uni-bonn.de">Max Schwarz</maintainer>
 
-    <buildtool_depend>catkin</buildtool_depend>
+    <buildtool_depend>ament_cmake</buildtool_depend>
     <depend>roscpp</depend>
     <depend>pluginlib</depend>
+    <depend>ament_index_cpp</depend>
 
     <depend>libglfw3-dev</depend>
     <depend>libfontconfig1-dev</depend>
     <depend>libfreetype6-dev</depend>
+
+    <export>
+      <build_type>ament_cmake</build_type>
+    </export>
 </package>

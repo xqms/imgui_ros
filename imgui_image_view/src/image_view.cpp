@@ -4,6 +4,9 @@
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <GL/gl.h>
+#include <rclcpp/callback_group.hpp>
+#include <rclcpp/executors/single_threaded_executor.hpp>
+#include <rclcpp/subscription_options.hpp>
 #endif
 
 #include <imgui_ros/window.h>
@@ -15,14 +18,11 @@
 
 #include <pluginlib/class_list_macros.hpp>
 
-#include <ros/callback_queue.h>
-#include <ros/names.h>
+#include <rosfmt/full.hpp>
 
-#include <rosfmt/full.h>
-
-#include <sensor_msgs/Image.h>
-#include <sensor_msgs/CompressedImage.h>
-#include <sensor_msgs/CameraInfo.h>
+#include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/msg/compressed_image.hpp>
+#include <sensor_msgs/msg/camera_info.hpp>
 
 #include <png.h>
 
@@ -62,15 +62,28 @@ class ImageView : public imgui_ros::Window
 public:
     ImageView()
     {
-        m_threadNH.setCallbackQueue(&m_threadQueue);
-
-        m_spinner.start();
     }
 
     ~ImageView()
     {
-        m_decoder.shutdown();
-        m_spinner.stop();
+        m_executor.cancel();
+        m_thread.join();
+    }
+
+    void initialize() override
+    {
+        m_node = context()->node();
+        m_decoder = std::make_unique<Decoder>(m_node);
+
+        m_callbackGroup = m_node->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive, false);
+        m_executor.add_callback_group(m_callbackGroup, m_node->get_node_base_interface());
+
+        m_thread = std::thread([&](){
+            ROSFMT_INFO(m_node, "Starting spin thread");
+            m_executor.spin();
+        });
+
+        m_topicSelector = std::make_unique<imgui_ros::TopicSelector>(m_node, std::set<std::string>{"sensor_msgs/msg/Image", "sensor_msgs/msg/CompressedImage"});
     }
 
     void paint() override
@@ -78,12 +91,12 @@ public:
         if(!m_hideTopicSelector)
         {
             ImGui::SetNextItemWidth(-FLT_MIN);
-            if(m_topicSelector.draw("##Topic", &m_topic, &m_type))
+            if(m_topicSelector->draw("##Topic", &m_topic, &m_type))
                 subscribe();
         }
 
         // Fetch all ready frames from decoder
-        while(auto newFrame = m_decoder.getNewFrame())
+        while(auto newFrame = m_decoder->getNewFrame())
             m_frame = std::move(newFrame);
 
         if(!m_frame)
@@ -96,8 +109,8 @@ public:
         {
             auto camInfo = m_camInfo;
 
-            float fx = m_camInfo->K[0];
-            float fy = m_camInfo->K[3*1 + 1];
+            float fx = m_camInfo->k[0];
+            float fy = m_camInfo->k[3*1 + 1];
             float factor = fx / fy;
 
             h *= factor;
@@ -136,7 +149,7 @@ public:
             }
 
             uint64_t msgs = m_messageCounter.exchange(0);
-            float rateNow = m_rateEstimator.rateNow();
+            float rateNow = m_rateEstimator.rateAt(m_node->now());
             float bufData[2] = {rateNow, float(msgs)};
             m_rateBuffer.push_back(0, bufData);
 
@@ -199,9 +212,9 @@ public:
 
             if(m_heartbeatTopic[0] != 0 && rateNow > 1)
             {
-                std_msgs::Header msg;
-                msg.stamp = ros::Time::now();
-                m_pub_heartBeat.publish(msg);
+                std_msgs::msg::Header msg;
+                msg.stamp = m_node->now();
+                m_pub_heartBeat->publish(msg);
             }
 
         }
@@ -273,7 +286,7 @@ public:
         glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &size_x);
         glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &size_y);
 
-        ROSFMT_INFO("Capturing image with resolution {}x{}", size_x, size_y);
+        ROSFMT_INFO(m_node, "Capturing image with resolution {}x{}", size_x, size_y);
 
         const std::size_t dataSize = size_x*size_y*3;
 
@@ -309,7 +322,7 @@ private:
             FILE* f = fopen(outPath, "w");
             if(!f)
             {
-                ROSFMT_ERROR("Could not write to {}", outPath);
+                ROSFMT_ERROR(m_node, "Could not write to {}", outPath);
                 NFD_FreePathU8(outPath);
                 return;
             }
@@ -348,7 +361,7 @@ private:
 
             fclose(f);
 
-            ROSFMT_INFO("Saved to {}", outPath);
+            ROSFMT_INFO(m_node, "Saved to {}", outPath);
 
             NFD_FreePathU8(outPath);
         }
@@ -356,33 +369,44 @@ private:
 
     void subscribe()
     {
-        m_sub.shutdown();
+        m_sub_raw.reset();
+        m_sub_compressed.reset();
         m_frame = {};
 
         if(m_topic.empty() || m_type.empty())
             return;
 
-        m_decoder.flush();
+        m_decoder->flush();
         m_camInfo = {};
 
-        if(m_type == "sensor_msgs/Image")
-            m_sub = m_threadNH.subscribe(m_topic, 1, &ImageView::handleImage, this);
-        else if(m_type == "sensor_msgs/CompressedImage")
-            m_sub = m_threadNH.subscribe(m_topic, 1, &ImageView::handleCompressedImage, this);
+        rclcpp::SubscriptionOptions opts;
+        opts.callback_group = m_callbackGroup;
 
-        std::string infoTopic = ros::names::parentNamespace(m_topic) + "/camera_info";
-        m_sub_camInfo = m_threadNH.subscribe(infoTopic, 1, &ImageView::handleCameraInfo, this);
+        if(m_type == "sensor_msgs/msg/Image")
+        {
+            ROSFMT_INFO(m_node, "subscribing raw to {}", m_topic);
+            m_sub_raw = m_node->create_subscription<sensor_msgs::msg::Image>(m_topic, 1, [&](const sensor_msgs::msg::Image::SharedPtr msg){ handleImage(msg); }, opts);
+        }
+        else if(m_type == "sensor_msgs/msg/CompressedImage")
+        {
+            ROSFMT_INFO(m_node, "subscribing compressed to {}", m_topic);
+            m_sub_compressed = m_node->create_subscription<sensor_msgs::msg::CompressedImage>(m_topic, 1, [&](const sensor_msgs::msg::CompressedImage::SharedPtr msg){ handleCompressedImage(msg); }, opts);
+        }
+
+        std::string baseTopic = m_topic.substr(0, m_topic.find_last_of('/'));
+        std::string infoTopic = baseTopic + "/camera_info";
+        m_sub_camInfo = m_node->create_subscription<sensor_msgs::msg::CameraInfo>(infoTopic, 1, [&](const sensor_msgs::msg::CameraInfo::SharedPtr msg){ handleCameraInfo(msg); });
     }
 
     void initHeartbeat()
     {
         if(m_heartbeatTopic[0] != 0)
-            m_pub_heartBeat = m_threadNH.advertise<std_msgs::Header>(m_heartbeatTopic, 1);
+            m_pub_heartBeat = m_node->create_publisher<std_msgs::msg::Header>(m_heartbeatTopic, 1);
         else
             m_pub_heartBeat = {};
     }
 
-    bool computeFrameSkip(const ros::Time& stamp)
+    bool computeFrameSkip(const rclcpp::Time& stamp)
     {
         if(m_paused)
             return true;
@@ -390,17 +414,17 @@ private:
         m_rateEstimator.put(stamp);
         m_messageCounter++;
 
-        ros::Time now = ros::Time::now();
-        if(m_lastMsgTime == ros::Time(0))
+        rclcpp::Time now = m_node->now();
+        if(m_lastMsgTime.nanoseconds() == 0)
             m_lastMsgTime = now;
         else
         {
             // Basic token bucket algorithm for rate limiting
-            ros::Duration elapsed = now - m_lastMsgTime;
+            rclcpp::Duration elapsed = now - m_lastMsgTime;
             m_lastMsgTime = now;
 
             m_throttleAllowance = std::min(2.0f,
-                m_throttleAllowance + static_cast<float>(elapsed.toSec()) * m_rateLimit
+                m_throttleAllowance + static_cast<float>(elapsed.seconds()) * m_rateLimit
             );
 
             if(m_throttleAllowance < 1.0f)
@@ -412,42 +436,48 @@ private:
         return false;
     }
 
-    void handleImage(const sensor_msgs::ImageConstPtr& msg)
+    void handleImage(const sensor_msgs::msg::Image::ConstSharedPtr& msg)
     {
+        ROSFMT_INFO(m_node, "image");
+
         if(computeFrameSkip(msg->header.stamp))
             return;
 
-        m_decoder.addMessage(msg);
+        m_decoder->addMessage(msg);
     }
 
-    void handleCompressedImage(const sensor_msgs::CompressedImageConstPtr& msg)
+    void handleCompressedImage(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg)
     {
+        ROSFMT_INFO(m_node, "compressed");
+
         if(computeFrameSkip(msg->header.stamp))
             return;
 
-        m_decoder.addMessage(msg);
+        m_decoder->addMessage(msg);
     }
 
-    void handleCameraInfo(const sensor_msgs::CameraInfoConstPtr& msg)
+    void handleCameraInfo(const sensor_msgs::msg::CameraInfo::ConstSharedPtr& msg)
     {
         m_camInfo = msg;
     }
 
-    imgui_ros::TopicSelector m_topicSelector{
-        "sensor_msgs/Image", "sensor_msgs/CompressedImage"
-    };
+    std::unique_ptr<imgui_ros::TopicSelector> m_topicSelector;
 
     std::string m_topic;
     std::string m_type;
 
-    Decoder m_decoder;
+    std::unique_ptr<Decoder> m_decoder;
 
-    ros::CallbackQueue m_threadQueue;
-    ros::NodeHandle m_threadNH;
-    ros::AsyncSpinner m_spinner{1, &m_threadQueue};
-    ros::Subscriber m_sub;
-    ros::Subscriber m_sub_camInfo;
-    ros::Publisher m_pub_heartBeat;
+    rclcpp::Node::SharedPtr m_node;
+
+    rclcpp::CallbackGroup::SharedPtr m_callbackGroup;
+    rclcpp::executors::SingleThreadedExecutor m_executor;
+    std::thread m_thread;
+
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr m_sub_raw;
+    rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr m_sub_compressed;
+    rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr m_sub_camInfo;
+    rclcpp::Publisher<std_msgs::msg::Header>::SharedPtr m_pub_heartBeat;
 
     std::optional<Decoder::OutputFrame> m_frame;
 
@@ -459,7 +489,7 @@ private:
     imgui_ros::ScrollingBuffer<200> m_rateBuffer{2};
     std::atomic_uint64_t m_messageCounter = 0;
 
-    sensor_msgs::CameraInfoConstPtr m_camInfo;
+    sensor_msgs::msg::CameraInfo::ConstSharedPtr m_camInfo;
     bool m_correctAspectRatio = false;
 
     bool m_showFPS = true;
@@ -468,7 +498,7 @@ private:
 
     int m_rateLimit = 60;
     float m_throttleAllowance = 0.0f;
-    ros::Time m_lastMsgTime;
+    rclcpp::Time m_lastMsgTime;
 };
 
 }
