@@ -56,11 +56,14 @@ void RateEstimator::put(const rclcpp::Time& time)
 
 float RateEstimator::rateAt(const rclcpp::Time& time) const
 {
+    if(m_lastMessageTime.nanoseconds() == 0)
+        return 0.0f;
+
     float tDelta = (time - m_lastMessageTime).seconds();
     float expL = std::exp(-DECAY * tDelta);
 
     // Bias correction
-    float t0Delta = (time - rclcpp::Time(0)).seconds();
+    float t0Delta = time.seconds();
     float S = (1.0f + DECAY * t0Delta) * std::exp(-DECAY * t0Delta);
 
     return (DECAY * tDelta * expL * m_lambdaLast + expL * m_lambdaSmoothLast) / (1.0f - S);

@@ -79,7 +79,6 @@ public:
         m_executor.add_callback_group(m_callbackGroup, m_node->get_node_base_interface());
 
         m_thread = std::thread([&](){
-            ROSFMT_INFO(m_node, "Starting spin thread");
             m_executor.spin();
         });
 
@@ -438,8 +437,6 @@ private:
 
     void handleImage(const sensor_msgs::msg::Image::ConstSharedPtr& msg)
     {
-        ROSFMT_INFO(m_node, "image");
-
         if(computeFrameSkip(msg->header.stamp))
             return;
 
@@ -448,8 +445,6 @@ private:
 
     void handleCompressedImage(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg)
     {
-        ROSFMT_INFO(m_node, "compressed");
-
         if(computeFrameSkip(msg->header.stamp))
             return;
 

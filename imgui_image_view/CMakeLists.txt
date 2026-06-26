@@ -29,7 +29,7 @@ find_package(X11)
 find_package(CUDAToolkit)
 if(CUDAToolkit_FOUND)
     message(STATUS "CUDA found, enabling CUDA decoder")
-    # add_definitions(-DCUDA_DECODER=1)
+    add_definitions(-DCUDA_DECODER=1)
 endif()
 
 add_library(imgui_image_view SHARED
