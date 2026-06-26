@@ -75,9 +75,9 @@ target_include_directories(imgui_ros PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/contrib/imgui>
-    $<INSTALL_INTERFACE:include/${PROJECT_NAME}/imgui>
+    $<INSTALL_INTERFACE:include/${PROJECT_NAME}/imgui_ros/imgui>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/contrib/implot>
-    $<INSTALL_INTERFACE:include/${PROJECT_NAME}/implot>
+    $<INSTALL_INTERFACE:include/${PROJECT_NAME}/imgui_ros/implot>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/contrib/nativefiledialog-extended/src/include>
 )
 target_link_libraries(imgui_ros PUBLIC
