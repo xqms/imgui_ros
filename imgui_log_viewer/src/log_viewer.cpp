@@ -10,7 +10,7 @@
 
 #include <pluginlib/class_list_macros.hpp>
 
-#include <rosgraph_msgs/Log.h>
+#include <rcl_interfaces/msg/log.hpp>
 
 #include <boost/circular_buffer.hpp>
 
@@ -41,7 +41,12 @@ public:
         if(!m_font)
             throw std::runtime_error{"Could not load monospace font"};
 
-        m_sub = context()->nodeHandle().subscribe("/rosout_agg", 20, &LogViewer::append, this);
+        // Same QoS as rqt_console: transient_local gives us the recent history of already running nodes
+        auto qos = rclcpp::QoS{m_entries.capacity()}.reliable().transient_local();
+
+        m_sub = context()->node()->create_subscription<rcl_interfaces::msg::Log>("/rosout", qos,
+            [this](const rcl_interfaces::msg::Log::ConstSharedPtr& msg){ append(msg); }
+        );
     }
 
     void paint() override
@@ -133,7 +138,7 @@ public:
             ImGui::PushID(row);
 
             // First column: Timestamp
-            auto& stamp = entry.msg->header.stamp;
+            auto& stamp = entry.msg->stamp;
             std::time_t time = stamp.sec;
             localtime_r(&time, &timeResult);
 
@@ -142,18 +147,18 @@ public:
             std::uint32_t color = [&](){
                 switch(entry.msg->level)
                 {
-                    case rosgraph_msgs::Log::DEBUG: return 0xff9cbc1a;
-                    case rosgraph_msgs::Log::INFO:  return 0xffffffff;
-                    case rosgraph_msgs::Log::WARN:  return 0xff0074f6;
-                    case rosgraph_msgs::Log::ERROR: return 0xff1515ed;
-                    case rosgraph_msgs::Log::FATAL: return 0xff1515ed;
+                    case rcl_interfaces::msg::Log::DEBUG: return 0xff9cbc1a;
+                    case rcl_interfaces::msg::Log::INFO:  return 0xffffffff;
+                    case rcl_interfaces::msg::Log::WARN:  return 0xff0074f6;
+                    case rcl_interfaces::msg::Log::ERROR: return 0xff1515ed;
+                    case rcl_interfaces::msg::Log::FATAL: return 0xff1515ed;
                     default: return 0xffb6599b;
                 }
             }();
 
             ImGui::PushStyleColor(ImGuiCol_Text, color);
 
-            ImGui::Text("%s.%02llu", timeBuf, stamp.nsec / 10000000ULL);
+            ImGui::Text("%s.%02llu", timeBuf, stamp.nanosec / 10000000ULL);
             if(ImGui::IsItemHovered())
                 rowIsHovered = true;
 
@@ -257,11 +262,11 @@ public:
 private:
     struct LogEntry
     {
-        rosgraph_msgs::LogConstPtr msg;
+        rcl_interfaces::msg::Log::ConstSharedPtr msg;
         float height = 0;
     };
 
-    void append(const rosgraph_msgs::LogConstPtr& msg)
+    void append(const rcl_interfaces::msg::Log::ConstSharedPtr& msg)
     {
         if(m_paused)
             return;
@@ -288,7 +293,7 @@ private:
         ImGui::PopFont();
     }
 
-    ros::Subscriber m_sub;
+    rclcpp::Subscription<rcl_interfaces::msg::Log>::SharedPtr m_sub;
     boost::circular_buffer<LogEntry> m_entries{256};
 
     ImFont* m_font = nullptr;

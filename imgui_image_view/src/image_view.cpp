@@ -4,9 +4,6 @@
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <GL/gl.h>
-#include <rclcpp/callback_group.hpp>
-#include <rclcpp/executors/single_threaded_executor.hpp>
-#include <rclcpp/subscription_options.hpp>
 #endif
 
 #include <imgui_ros/window.h>
@@ -20,6 +17,11 @@
 
 #include <rosfmt/full.hpp>
 
+#include <rclcpp/callback_group.hpp>
+#include <rclcpp/executors/single_threaded_executor.hpp>
+#include <rclcpp/subscription_options.hpp>
+
+#include <std_msgs/msg/header.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/compressed_image.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
@@ -66,8 +68,15 @@ public:
 
     ~ImageView()
     {
-        m_executor.cancel();
-        m_thread.join();
+        // Wake up the decoder first, the spin thread might be blocked inside it
+        if(m_decoder)
+            m_decoder->shutdown();
+
+        if(m_executor)
+            m_executor->cancel();
+
+        if(m_thread.joinable())
+            m_thread.join();
     }
 
     void initialize() override
@@ -75,11 +84,16 @@ public:
         m_node = context()->node();
         m_decoder = std::make_unique<Decoder>(m_node);
 
+        // The executor has to live in the same rclcpp context as the node (which is not the default context in rqt)
+        rclcpp::ExecutorOptions executorOptions;
+        executorOptions.context = m_node->get_node_base_interface()->get_context();
+        m_executor = std::make_unique<rclcpp::executors::SingleThreadedExecutor>(executorOptions);
+
         m_callbackGroup = m_node->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive, false);
-        m_executor.add_callback_group(m_callbackGroup, m_node->get_node_base_interface());
+        m_executor->add_callback_group(m_callbackGroup, m_node->get_node_base_interface());
 
         m_thread = std::thread([&](){
-            m_executor.spin();
+            m_executor->spin();
         });
 
         m_topicSelector = std::make_unique<imgui_ros::TopicSelector>(m_node, std::set<std::string>{"sensor_msgs/msg/Image", "sensor_msgs/msg/CompressedImage"});
@@ -466,7 +480,7 @@ private:
     rclcpp::Node::SharedPtr m_node;
 
     rclcpp::CallbackGroup::SharedPtr m_callbackGroup;
-    rclcpp::executors::SingleThreadedExecutor m_executor;
+    std::unique_ptr<rclcpp::executors::SingleThreadedExecutor> m_executor;
     std::thread m_thread;
 
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr m_sub_raw;

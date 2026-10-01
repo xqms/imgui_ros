@@ -30,6 +30,8 @@
 #include <regex>
 #include <fstream>
 
+#include <unistd.h>
+
 #include <boost/program_options.hpp>
 
 #include "nfd_support.h"
@@ -165,8 +167,22 @@ int main(int argc, char** argv)
     namespace po = boost::program_options;
     namespace fs = std::filesystem;
 
-    rclcpp::init(argc, argv);
-    auto node = std::make_shared<rclcpp::Node>("gui");
+    // Strip ROS arguments (--ros-args ...), program_options would choke on them
+    std::vector<std::string> args = rclcpp::init_and_remove_ros_arguments(argc, argv);
+    args.erase(args.begin());
+
+    // Shut down rclcpp on every return path (after all nodes are gone). Leaving this to
+    // static destruction makes rmw_zenoh abort.
+    struct RclcppShutdown
+    {
+        ~RclcppShutdown() { rclcpp::shutdown(); }
+    } rclcppShutdown;
+
+    // Unique node name (like ROS1 anonymous names), so that multiple instances can run at once
+    auto node = std::make_shared<rclcpp::Node>("gui_" + std::to_string(getpid()));
+
+    rclcpp::executors::SingleThreadedExecutor executor;
+    executor.add_node(node);
 
     po::options_description desc("Options");
 
@@ -176,7 +192,7 @@ int main(int argc, char** argv)
     ;
 
     po::variables_map vm;
-    po::store(po::parse_command_line(argc, argv, desc), vm);
+    po::store(po::command_line_parser(args).options(desc).run(), vm);
 
     if(vm.count("help"))
     {
@@ -365,7 +381,7 @@ int main(int argc, char** argv)
             else
             {
                 RCLCPP_ERROR(node->get_logger(), "Invalid settings line: '%s'", line.c_str());
-                std::exit(1);
+                return 1;
             }
         }
 
@@ -410,7 +426,7 @@ int main(int argc, char** argv)
 
         // Call ROS callbacks only after first frame to make sure everything is set up
         if(!firstFrame)
-            rclcpp::spin_some(node);
+            executor.spin_some();
 
         // We cannot initialize a new plugin between ImGui::NewFrame / EndFrame, since it may load fonts and otherwise alter ImGui context.
         // Instead, keep the pointer here and initialize it after the EndFrame().

@@ -670,7 +670,7 @@ void Decoder::Private::pushFrame(AVFrame* frame, AVColorSpace colorSpace, AVColo
 
         while(!m_shutdown && m_freeOutFrames.empty())
         {
-            ROSFMT_DEBUG_THROTTLE(m_node, 1s, "decoder", "Decoder has to wait for free output frames");
+            ROSFMT_DEBUG_THROTTLE(m_node, 1s, "Decoder has to wait for free output frames");
             m_freeOutCond.wait(lock);
         }
 

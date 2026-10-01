@@ -10,7 +10,7 @@
 
 #include <pluginlib/class_list_macros.hpp>
 
-#include <std_msgs/Float32.h>
+#include <std_msgs/msg/float32.hpp>
 
 namespace imgui_plot
 {
@@ -22,17 +22,19 @@ class GUI : public imgui_ros::Window
 public:
     void initialize() override
     {
+        m_node = context()->node();
+        m_startTime = m_node->now();
+        m_topicSelector = std::make_unique<imgui_ros::TopicSelector>(m_node, std::set<std::string>{"std_msgs/msg/Float32"});
     }
 
     void paint() override
     {
-        ros::Time now = ros::Time::now();
-        float time = (now - m_startTime).toSec();
+        float time = (m_node->now() - m_startTime).seconds();
 
         if(!m_hideTopicSelector)
         {
             ImGui::SetNextItemWidth(-FLT_MIN);
-            if(m_topicSelector.draw("##Topic", &m_topic, &m_type))
+            if(m_topicSelector->draw("##Topic", &m_topic, &m_type))
                 subscribe();
         }
 
@@ -82,29 +84,30 @@ private:
         if(m_topic.empty())
             return;
 
-        if(m_type == "std_msgs/Float32")
-            m_sub = context()->nodeHandle().subscribe(m_topic, 1, &GUI::handleFloat32, this);
+        // Best effort is compatible with both reliable and best effort publishers
+        if(m_type == "std_msgs/msg/Float32")
+            m_sub = m_node->create_subscription<std_msgs::msg::Float32>(m_topic, rclcpp::SensorDataQoS(), [this](const std_msgs::msg::Float32& msg){ handleFloat32(msg); });
     }
 
-    void handleFloat32(const std_msgs::Float32& msg)
+    void handleFloat32(const std_msgs::msg::Float32& msg)
     {
         float data = msg.data;
-        m_buffer.push_back((ros::Time::now() - m_startTime).toSec(), &data);
+        m_buffer.push_back((m_node->now() - m_startTime).seconds(), &data);
     }
 
+    rclcpp::Node::SharedPtr m_node;
+
     bool m_hideTopicSelector = false;
-    imgui_ros::TopicSelector m_topicSelector{
-        "std_msgs/Float32"
-    };
+    std::unique_ptr<imgui_ros::TopicSelector> m_topicSelector;
 
     std::string m_topic;
     std::string m_type;
 
     imgui_ros::ScrollingBuffer<2048> m_buffer{1};
 
-    ros::Time m_startTime = ros::Time::now();
+    rclcpp::Time m_startTime;
 
-    ros::Subscriber m_sub;
+    rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr m_sub;
 };
 
 }

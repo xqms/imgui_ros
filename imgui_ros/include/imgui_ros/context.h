@@ -26,7 +26,7 @@ public:
     virtual const rclcpp::Node::SharedPtr& node() = 0;
 
     template<class Msg>
-    Box<Msg> subscribeBox(const std::string& topic, const rclcpp::QoS qos = {})
+    Box<Msg> subscribeBox(const std::string& topic, const rclcpp::QoS& qos = rclcpp::QoS{1})
     { return Box<Msg>(node(), topic, qos); }
 
     virtual ImFont* loadFont(const std::string& query, float relativeSize = 1.0f) = 0;

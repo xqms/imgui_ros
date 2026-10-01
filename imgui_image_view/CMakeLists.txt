@@ -6,10 +6,9 @@ find_package(ament_cmake REQUIRED)
 find_package(imgui_ros REQUIRED)
 find_package(rosfmt REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(fmt REQUIRED)
-
-include_directories(${catkin_INCLUDE_DIRS})
 
 set(CMAKE_CXX_FLAGS "-Wall")
 set(CMAKE_CXX_STANDARD 20)
@@ -43,6 +42,7 @@ target_link_libraries(imgui_image_view PRIVATE
     fmt::fmt
     pluginlib::pluginlib
     ${sensor_msgs_TARGETS}
+    ${std_msgs_TARGETS}
     PkgConfig::avcodec
     PkgConfig::avformat
     PkgConfig::avutil

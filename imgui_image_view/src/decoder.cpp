@@ -498,7 +498,6 @@ void Decoder::Private::pushFrame(AVFrame* frame, AVColorSpace colorSpace, AVColo
 
     // Provide sync fence
     frameData->fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-    ROSFMT_INFO(m_node, "Create fence: {}", (void*)frameData->fence);
     glFlush();
 
     // Mark as finished
@@ -622,7 +621,6 @@ std::optional<Decoder::OutputFrame> Decoder::Private::getNewFrame()
     // Task is done, but the final GL transfer from buffer into texture might
     // still be running.
 
-    ROSFMT_INFO(m_node, "Wait: {}", (void*)task.frameData->fence);
     GLenum syncStatus = glClientWaitSync(task.frameData->fence, 0, 0);
     if(syncStatus == GL_TIMEOUT_EXPIRED)
         return {}; // Keep task in queue

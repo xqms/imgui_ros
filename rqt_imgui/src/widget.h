@@ -4,12 +4,14 @@
 #ifndef RQT_IMGUI_WIDGET_H
 #define RQT_IMGUI_WIDGET_H
 
-#include <rqt_gui_cpp/plugin.h>
+#include <qt_gui_cpp/settings.h>
 
 #include <QOpenGLWidget>
 #include <QOpenGLFunctions_3_2_Core>
 
 #include <imgui_ros/window.h>
+
+#include <rclcpp/executors/single_threaded_executor.hpp>
 
 #include <fontconfig/fontconfig.h>
 
@@ -23,7 +25,7 @@ namespace rqt_imgui
 class Widget : public QOpenGLWidget, protected QOpenGLFunctions_3_2_Core, public imgui_ros::Context
 {
 public:
-    explicit Widget(const boost::shared_ptr<imgui_ros::Window>& window, const ros::NodeHandle& nh, QWidget* parent = nullptr);
+    explicit Widget(const std::shared_ptr<imgui_ros::Window>& window, const rclcpp::Node::SharedPtr& node, QWidget* parent = nullptr);
     ~Widget();
 
     void saveSettings(qt_gui_cpp::Settings& settings);
@@ -49,13 +51,13 @@ private:
 
     void updateCursor();
 
-    ros::NodeHandle& nodeHandle() override
-    { return m_nh; }
+    const rclcpp::Node::SharedPtr& node() override
+    { return m_node; }
 
-    boost::shared_ptr<imgui_ros::Window> m_window;
+    std::shared_ptr<imgui_ros::Window> m_window;
 
-    std::unique_ptr<ros::CallbackQueue> m_callbackQueue;
-    ros::NodeHandle m_nh;
+    rclcpp::Node::SharedPtr m_node;
+    std::unique_ptr<rclcpp::executors::SingleThreadedExecutor> m_executor;
 
     ImGuiContext* m_imgui = {};
     ImGuiIO* m_io = {};

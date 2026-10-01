@@ -7,12 +7,10 @@
 
 #include <imgui_ros/window.h>
 
-#include <QMessageBox>
-#include <QMetaObject>
+#include <rclcpp/context.hpp>
+#include <rclcpp/node.hpp>
 
-#include <ros/master.h>
-
-#include <thread>
+#include <unistd.h>
 
 #include "widget.h"
 
@@ -22,19 +20,20 @@ namespace rqt_imgui
 class DirectPlugin : public qt_gui_cpp::Plugin
 {
 public:
-    DirectPlugin(const boost::shared_ptr<imgui_ros::Window>& window, const ros::NodeHandle& nh)
+    DirectPlugin(const std::shared_ptr<imgui_ros::Window>& window, const rclcpp::Node::SharedPtr& node)
      : m_window{window}
-     , m_nh{nh}
+     , m_node{node}
     {}
 
     ~DirectPlugin() {}
 
     void initPlugin(qt_gui_cpp::PluginContext& ctx) override
     {
-        m_w = new Widget(m_window, m_nh);
+        m_w = new Widget(m_window, m_node);
 
         // Important, otherwise the window does not get deleted before the widget
         m_window.reset();
+        m_node.reset();
 
         ctx.addWidget(m_w);
     }
@@ -51,8 +50,8 @@ public:
     { m_w->restoreSettings(instanceSettings); }
 
 private:
-    boost::shared_ptr<imgui_ros::Window> m_window;
-    ros::NodeHandle m_nh;
+    std::shared_ptr<imgui_ros::Window> m_window;
+    rclcpp::Node::SharedPtr m_node;
     Widget* m_w = nullptr;
 };
 
@@ -64,60 +63,33 @@ public:
     {}
 
     ~ImguiROSPluginProvider()
-    {}
+    {
+        if(m_context)
+            m_context->shutdown("rqt_imgui plugin provider destroyed");
+    }
 
     qt_gui_cpp::Plugin* load_plugin(const QString& plugin_id, qt_gui_cpp::PluginContext* plugin_context) override
     {
-        if(!m_nh)
+        if(!m_context)
         {
-            int argc = 0;
-            char** argv = 0;
-            std::stringstream name;
-            name << "rqt_gui_cpp_node_";
-            name << getpid();
-
-            ros::init(argc, argv, name.str(), ros::init_options::NoSigintHandler);
-
-            if(!ros::master::check())
-            {
-                auto dlg = new QMessageBox(
-                    QMessageBox::Question,
-                    QObject::tr("Waiting for ROS master"),
-                    QObject::tr("Could not find ROS master. Either start a 'roscore' or abort loading the plugin."),
-                    QMessageBox::Abort
-                );
-
-                std::atomic_bool abort = false;
-                std::thread thread{[&](){
-                    while(!abort)
-                    {
-                        if(ros::master::check())
-                        {
-                            QMetaObject::invokeMethod(dlg, "done", Qt::QueuedConnection, Q_ARG(int, QMessageBox::Ok));
-                            return;
-                        }
-
-                        usleep(500*1000);
-                    }
-                }};
-
-                int btn = dlg->exec();
-
-                if(btn != QMessageBox::Ok)
-                    abort = true;
-
-                thread.join();
-
-                if(btn != QMessageBox::Ok)
-                    return nullptr;
-            }
-
-            m_nh = std::make_unique<ros::NodeHandle>("~");
+            // rqt_gui_cpp calls rclcpp::init() on the global context without checking whether it is
+            // initialized already. Use our own context so that we do not get in each other's way.
+            m_context = std::make_shared<rclcpp::Context>();
+            m_context->init(0, nullptr);
         }
 
         std::string lookup_name = plugin_id.toStdString();
 
-        auto instance = create_plugin(lookup_name, plugin_context);
+        std::shared_ptr<imgui_ros::Window> instance;
+        try
+        {
+            instance = create_plugin(lookup_name, plugin_context);
+        }
+        catch(pluginlib::PluginlibException& e)
+        {
+            fprintf(stderr, "Could not load plugin %s: %s\n", lookup_name.c_str(), e.what());
+            return {};
+        }
 
         if(!instance)
         {
@@ -125,7 +97,13 @@ public:
             return {};
         }
 
-        auto plugin = new DirectPlugin(instance, *m_nh);
+        // Each plugin gets its own node, which is spun from the widget's paint method.
+        std::stringstream name;
+        name << "rqt_imgui_" << getpid() << "_" << m_nodeCounter++;
+
+        auto node = std::make_shared<rclcpp::Node>(name.str(), rclcpp::NodeOptions().context(m_context));
+
+        auto plugin = new DirectPlugin(instance, node);
 
         if(plugin_context)
             plugin->initPlugin(*plugin_context);
@@ -139,7 +117,8 @@ public:
     }
 
 private:
-    std::unique_ptr<ros::NodeHandle> m_nh;
+    rclcpp::Context::SharedPtr m_context;
+    unsigned int m_nodeCounter = 0;
 };
 
 }

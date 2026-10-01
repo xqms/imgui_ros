@@ -1,4 +1,4 @@
-<library path="lib/libimgui_log_viewer">
+<library path="imgui_log_viewer">
     <class name="imgui_log_viewer/LogViewer" type="imgui_log_viewer::LogViewer" base_class_type="imgui_ros::Window">
         <description>
             ROS Log Viewer

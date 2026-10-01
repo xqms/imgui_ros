@@ -1,4 +1,4 @@
-<library path="lib/libimgui_wrench">
+<library path="imgui_wrench">
     <class name="imgui_wrench/GUI" type="imgui_wrench::GUI" base_class_type="imgui_ros::Window">
         <description>
             Plots geometry_msgs/Wrench(Stamped)

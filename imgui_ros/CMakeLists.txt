@@ -10,12 +10,6 @@ find_package(ament_index_cpp REQUIRED)
 cmake_policy(SET CMP0167 NEW)
 find_package(Boost COMPONENTS program_options REQUIRED)
 
-# catkin_package(
-#     CATKIN_DEPENDS pluginlib roscpp
-#     CFG_EXTRAS imgui_ros.cmake
-#     LIBRARIES imgui_ros
-# )
-
 include(cmake/CPM.cmake)
 
 CPMAddPackage(
@@ -98,9 +92,6 @@ add_executable(gui
     src/nfd_support.cpp
     contrib/imgui/backends/imgui_impl_opengl3.cpp
     contrib/imgui/backends/imgui_impl_glfw.cpp
-)
-target_include_directories(gui PRIVATE
-    ${catkin_INCLUDE_DIRS}
 )
 target_link_libraries(gui
     imgui_ros

@@ -1,4 +1,4 @@
-<library path="lib/librqt_imgui_provider">
+<library path="rqt_imgui_provider">
   <class name="rqt_imgui/ImguiROSPluginProvider" type="rqt_imgui::ImguiROSPluginProvider" base_class_type="qt_gui_cpp::PluginProvider">
     <description>
       A C++ plugin provider for imgui_ros plugins

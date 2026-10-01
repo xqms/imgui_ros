@@ -10,7 +10,8 @@
 
 #include <pluginlib/class_list_macros.hpp>
 
-#include <geometry_msgs/WrenchStamped.h>
+#include <geometry_msgs/msg/wrench.hpp>
+#include <geometry_msgs/msg/wrench_stamped.hpp>
 
 namespace imgui_wrench
 {
@@ -22,17 +23,22 @@ class GUI : public imgui_ros::Window
 public:
     void initialize() override
     {
+        m_node = context()->node();
+        m_startTime = m_node->now();
+        m_topicSelector = std::make_unique<imgui_ros::TopicSelector>(m_node, std::set<std::string>{
+            "geometry_msgs/msg/WrenchStamped",
+            "geometry_msgs/msg/Wrench"
+        });
     }
 
     void paint() override
     {
-        ros::Time now = ros::Time::now();
-        float time = (now - m_startTime).toSec();
+        float time = (m_node->now() - m_startTime).seconds();
 
         if(!m_hideTopicSelector)
         {
             ImGui::SetNextItemWidth(-FLT_MIN);
-            if(m_topicSelector.draw("##Topic", &m_topic, &m_type))
+            if(m_topicSelector->draw("##Topic", &m_topic, &m_type))
                 subscribe();
         }
 
@@ -113,13 +119,14 @@ private:
         if(m_topic.empty())
             return;
 
-        if(m_type == "geometry_msgs/WrenchStamped")
-            m_sub = context()->nodeHandle().subscribe(m_topic, 1, &GUI::handleWrenchStamped, this);
-        else if(m_type == "geometry_msgs/Wrench")
-            m_sub = context()->nodeHandle().subscribe(m_topic, 1, &GUI::handleWrench, this);
+        // Best effort is compatible with both reliable and best effort publishers
+        if(m_type == "geometry_msgs/msg/WrenchStamped")
+            m_sub = m_node->create_subscription<geometry_msgs::msg::WrenchStamped>(m_topic, rclcpp::SensorDataQoS(), [this](const geometry_msgs::msg::WrenchStamped& msg){ handleWrenchStamped(msg); });
+        else if(m_type == "geometry_msgs/msg/Wrench")
+            m_sub = m_node->create_subscription<geometry_msgs::msg::Wrench>(m_topic, rclcpp::SensorDataQoS(), [this](const geometry_msgs::msg::Wrench& msg){ handleWrench(msg); });
     }
 
-    void handleWrench(const geometry_msgs::Wrench& msg)
+    void handleWrench(const geometry_msgs::msg::Wrench& msg)
     {
         float data[6] = {
             static_cast<float>(msg.force.x),
@@ -129,9 +136,9 @@ private:
             static_cast<float>(msg.torque.y),
             static_cast<float>(msg.torque.z)
         };
-        m_buffer.push_back((ros::Time::now() - m_startTime).toSec(), data);
+        m_buffer.push_back((m_node->now() - m_startTime).seconds(), data);
     }
-    void handleWrenchStamped(const geometry_msgs::WrenchStamped& msg)
+    void handleWrenchStamped(const geometry_msgs::msg::WrenchStamped& msg)
     {
         float data[6] = {
             static_cast<float>(msg.wrench.force.x),
@@ -141,23 +148,22 @@ private:
             static_cast<float>(msg.wrench.torque.y),
             static_cast<float>(msg.wrench.torque.z)
         };
-        m_buffer.push_back((msg.header.stamp - m_startTime).toSec(), data);
+        m_buffer.push_back((rclcpp::Time{msg.header.stamp} - m_startTime).seconds(), data);
     }
 
+    rclcpp::Node::SharedPtr m_node;
+
     bool m_hideTopicSelector = false;
-    imgui_ros::TopicSelector m_topicSelector{
-        "geometry_msgs/WrenchStamped",
-        "geometry_msgs/Wrench"
-    };
+    std::unique_ptr<imgui_ros::TopicSelector> m_topicSelector;
 
     std::string m_topic;
     std::string m_type;
 
     imgui_ros::ScrollingBuffer<2048> m_buffer{6};
 
-    ros::Time m_startTime = ros::Time::now();
+    rclcpp::Time m_startTime;
 
-    ros::Subscriber m_sub;
+    rclcpp::SubscriptionBase::SharedPtr m_sub;
 };
 
 }

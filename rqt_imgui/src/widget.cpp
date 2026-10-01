@@ -16,8 +16,7 @@
 
 #include <imgui_ros/imgui/backends/imgui_impl_opengl3.h>
 
-#include <ros/callback_queue.h>
-#include <ros/package.h>
+#include <ament_index_cpp/get_package_share_directory.hpp>
 
 #include "nfd_support.h"
 
@@ -71,13 +70,16 @@ namespace
 namespace rqt_imgui
 {
 
-Widget::Widget(const boost::shared_ptr<Window>& window, const ros::NodeHandle& nh, QWidget* parent)
+Widget::Widget(const std::shared_ptr<Window>& window, const rclcpp::Node::SharedPtr& node, QWidget* parent)
  : QOpenGLWidget{parent}
  , m_window{window}
- , m_nh{nh}
+ , m_node{node}
 {
-    m_callbackQueue = std::make_unique<ros::CallbackQueue>();
-    m_nh.setCallbackQueue(m_callbackQueue.get());
+    // Callbacks are executed from paintGL(), so they run in the GUI thread with our ImGui context active
+    rclcpp::ExecutorOptions executorOptions;
+    executorOptions.context = m_node->get_node_base_interface()->get_context();
+    m_executor = std::make_unique<rclcpp::executors::SingleThreadedExecutor>(executorOptions);
+    m_executor->add_node(m_node);
 
     m_updateTimer = new QTimer(this);
     connect(m_updateTimer, &QTimer::timeout, this, [&](){ update(); });
@@ -207,7 +209,7 @@ void Widget::paintGL()
     ImGui::Begin("window", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoResize);
 
     // Invoke subscriber/box callbacks
-    m_callbackQueue->callAvailable();
+    m_executor->spin_some();
 
     m_window->paint();
 
@@ -301,7 +303,7 @@ ImFont* Widget::loadFont(const std::string& query, float relativeSize)
         font = ImGui::GetIO().Fonts->AddFontFromFileTTF(fontPath.c_str(), height, NULL, NULL);
 
         // Add symbol font
-        auto symbolPath = fs::path(ros::package::getPath("imgui_ros")) / fs::path("contrib") / fs::path("fonts") / fs::path("fa-solid-900.ttf");
+        auto symbolPath = fs::path(ament_index_cpp::get_package_share_directory("imgui_ros")) / fs::path("contrib") / fs::path("fonts") / fs::path("fa-solid-900.ttf");
         if(fs::exists(symbolPath))
         {
             ImFontConfig cfg{};
