@@ -34,8 +34,11 @@ pkg_check_modules(DBus dbus-1 IMPORTED_TARGET)
 
 set(CMAKE_CXX_STANDARD 20)
 
+# The COMMANDs of one execute_process() run concurrently as a pipeline, so the
+# directory has to exist before it starts.
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/include/imgui_ros")
 execute_process(
-    COMMAND cmake -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/include/imgui_ros"
+    COMMAND_ERROR_IS_FATAL ANY
     COMMAND cmake -E create_symlink "${CMAKE_CURRENT_SOURCE_DIR}/contrib/imgui" "${CMAKE_CURRENT_BINARY_DIR}/include/imgui_ros/imgui"
     COMMAND cmake -E create_symlink "${CMAKE_CURRENT_SOURCE_DIR}/contrib/implot" "${CMAKE_CURRENT_BINARY_DIR}/include/imgui_ros/implot"
     COMMAND cmake -E create_symlink "${CMAKE_CURRENT_SOURCE_DIR}/contrib/nativefiledialog-extended/src/include" "${CMAKE_CURRENT_BINARY_DIR}/include/imgui_ros/nfd"
