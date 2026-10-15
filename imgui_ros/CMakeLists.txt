@@ -7,7 +7,9 @@ find_package(rclcpp REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 
-cmake_policy(SET CMP0167 NEW)
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
 find_package(Boost COMPONENTS program_options REQUIRED)
 
 include(cmake/CPM.cmake)

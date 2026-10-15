@@ -7,7 +7,9 @@ find_package(imgui_ros REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rcl_interfaces REQUIRED)
 
-cmake_policy(SET CMP0167 NEW)
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
 find_package(Boost REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
