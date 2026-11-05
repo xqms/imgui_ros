@@ -297,7 +297,7 @@ bool Decoder::Private::initializeDecoder(const std::string& encoding, int width,
 
     if(strcasecmp(encoding.c_str(), "h264") == 0)
         codecID = AV_CODEC_ID_H264;
-    else if(strcasecmp(encoding.c_str(), "h265") == 0)
+    else if(strcasecmp(encoding.c_str(), "h265" || strcasecmp(encoding.c_str(), "hevc") == 0) == 0)
         codecID = AV_CODEC_ID_H265;
     else if(strcasecmp(encoding.c_str(), "bgr8; jpeg compressed bgr8") == 0)
         codecID = AV_CODEC_ID_MJPEG;
